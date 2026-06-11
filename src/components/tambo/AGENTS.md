@@ -4,18 +4,16 @@ Components in this directory are registered with Tambo for AI-driven generative 
 
 Read the full documentation at https://docs.tambo.co/llms.txt for component creation patterns and best practices.
 
-## Registered Components (12)
+## Registered Components (10)
 
 ### Interactable (AI can update props at runtime)
 
 | Component | File | Description |
 |-----------|------|-------------|
-| **GeoMap** | `geo-map.tsx` + `geo-map-deckgl.tsx` | deck.gl map with 6 layer types (h3, a5, scatterplot, geojson, arc, wkb). Multi-layer (max 5). |
-| **H3Map** | `h3-map.tsx` | Backward-compat alias for GeoMap with `layerType="h3"` |
+| **GeoMap** | `geo-map.tsx` + `geo-map-deckgl.tsx` | deck.gl map with 6 layer types (h3, a5, scatterplot, geojson, arc, wkb). Catalog vector data renders via the wkb path. Multi-layer (max 5). |
 | **Graph** | `graph.tsx` | Recharts with 10 chart types (bar, line, area, pie, scatter, radar, radialBar, treemap, composed, funnel) |
 | **DataTable** | `data-table.tsx` | Paginated table with zoom-to-record and copy-record actions |
-| **TimeSlider** | `time-slider.tsx` | Time playback for weather. Cross-filters GeoMap + Graph via time filter bus |
-| **ObjexViewer** | `objex-viewer.tsx` | 3D viewer for GeoTIFF, LAZ, PMTiles, FlatGeobuf |
+| **TimeSlider** | `time-slider.tsx` | Time playback over any timestamped dataset. Cross-filters GeoMap + Graph via time filter bus |
 
 ### Static (AI sends all props inline)
 
