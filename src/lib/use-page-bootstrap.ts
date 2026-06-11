@@ -18,7 +18,7 @@ export function usePageBootstrap(catalog?: CatalogRef, datasets?: Dataset[]) {
   const userKey = useAnonymousUserKey();
   const geo = useGeoIP();
   const contextHelpers = useMemo(() => buildContextHelpers(geo, catalog, datasets), [geo, catalog, datasets]);
-  const suggestions = useMemo(() => buildInitialSuggestions(geo), [geo]);
+  const suggestions = useMemo(() => buildInitialSuggestions(geo, catalog, datasets), [geo, catalog, datasets]);
 
   useEffect(() => {
     preloadDuckDB();
