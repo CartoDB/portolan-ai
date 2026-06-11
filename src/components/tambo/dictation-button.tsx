@@ -1,0 +1,67 @@
+import { useTamboThreadInput, useTamboVoice } from "@tambo-ai/react";
+import { Loader2Icon, Mic, Square } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Tooltip } from "@/components/tambo/message-suggestions";
+
+/**
+ * Button for dictating speech into the message input.
+ */
+export default function DictationButton() {
+  const { startRecording, stopRecording, isRecording, isTranscribing, transcript, transcriptionError } =
+    useTamboVoice();
+  const { setValue } = useTamboThreadInput();
+  const lastProcessedTranscriptRef = useRef<string>("");
+
+  const handleStartRecording = () => {
+    lastProcessedTranscriptRef.current = "";
+    startRecording();
+  };
+
+  const handleStopRecording = () => {
+    stopRecording();
+  };
+
+  useEffect(() => {
+    if (transcript && transcript !== lastProcessedTranscriptRef.current) {
+      lastProcessedTranscriptRef.current = transcript;
+      setValue((prev) => `${prev} ${transcript}`);
+    }
+  }, [transcript, setValue]);
+
+  if (isTranscribing) {
+    return (
+      <div className="p-2 rounded-md">
+        <Loader2Icon className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-row items-center gap-2">
+      <span className="text-sm text-destructive">{transcriptionError}</span>
+      {isRecording ? (
+        <Tooltip content="Stop">
+          <button
+            type="button"
+            onClick={handleStopRecording}
+            aria-label="Stop dictation"
+            className="p-2 rounded-md cursor-pointer hover:bg-muted"
+          >
+            <Square className="h-4 w-4 text-destructive fill-current animate-pulse" />
+          </button>
+        </Tooltip>
+      ) : (
+        <Tooltip content="Dictate">
+          <button
+            type="button"
+            onClick={handleStartRecording}
+            aria-label="Start dictation"
+            className="p-2 rounded-md cursor-pointer hover:bg-muted"
+          >
+            <Mic className="h-5 w-5" />
+          </button>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
