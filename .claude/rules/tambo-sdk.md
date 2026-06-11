@@ -134,7 +134,7 @@ Components receive `_tambo_componentId`, `_tambo_*` hidden props. **Never spread
 
 ### Component Selection (Edit with AI)
 
-Dashboard panels with interactable components (GeoMap, Graph, DataTable, TimeSlider, ObjexViewer) show a Pencil "Edit with AI" button. When clicked:
+Dashboard panels with interactable components (GeoMap, Graph, DataTable, TimeSlider) show a Pencil "Edit with AI" button. When clicked:
 1. `useTamboInteractable().setInteractableSelected(componentId, true)` marks the component
 2. AI sees `isSelected: true` in the interactable context and focuses its next response on that component
 3. Selection is one-shot: auto-cleared visually when AI finishes responding (`isIdle` transition)

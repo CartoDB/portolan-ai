@@ -48,7 +48,7 @@ importers:
         specifier: ^9.3.3
         version: 9.3.3(@luma.gl/core@9.3.3)(@luma.gl/shadertools@9.3.3(@luma.gl/core@9.3.3))
       '@maplibre/maplibre-gl-style-spec':
-        specifier: ^24.8.5
+        specifier: ^24.10.0
         version: 24.10.0
       '@radix-ui/react-dropdown-menu':
         specifier: ^2.1.17
@@ -63,7 +63,7 @@ importers:
         specifier: 1.2.8
         version: 1.2.8(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(@types/json-schema@7.0.15)(@types/node@25.9.2)(@types/react@19.2.17)(quansync@0.2.11)(react@19.2.7)(typescript@5.9.3)(zod-to-json-schema@3.25.2(zod@3.25.76))(zod@3.25.76)
       '@tambo-ai/typescript-sdk':
-        specifier: ^0.96.3
+        specifier: ^0.96.4
         version: 0.96.4
       '@walkthru-earth/objex-utils':
         specifier: ^1.5.0
@@ -75,7 +75,7 @@ importers:
         specifier: ^0.7.1
         version: 0.7.1
       dompurify:
-        specifier: ^3.4.8
+        specifier: ^3.4.9
         version: 3.4.9
       framer-motion:
         specifier: ^12.40.0
@@ -111,8 +111,8 @@ importers:
         specifier: ^5.24.0
         version: 5.24.0
       posthog-js:
-        specifier: ^1.381.0
-        version: 1.384.3
+        specifier: ^1.386.0
+        version: 1.386.0
       radix-ui:
         specifier: ^1.5.0
         version: 1.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -874,11 +874,11 @@ packages:
   '@nodable/entities@2.1.1':
     resolution: {integrity: sha512-Pig3HxDIoMgjdEH8OCf/dkcTmLFjJRjWuq8jSnklu284/TKOPibSRERmOykiwmyXTtv61mP+44f3GMx0tLAyjg==}
 
-  '@posthog/core@1.31.3':
-    resolution: {integrity: sha512-pfaaqc5opfuW/0fgDCbn56JPzVOboVKHOMUyKsIcOVuqdpw4xmvg4tqb/H7fFcC+A6WFXPz6VLe0RHHCy3eR/Q==}
+  '@posthog/core@1.32.0':
+    resolution: {integrity: sha512-ObLtuhf3QgWP6UyyuiLGBPlVaQw2h4wYC3I4cg9m7UfveaY5vqtpqEYNOdpcuYlQYIVkoSYxu9Wsokmmg9q4nA==}
 
-  '@posthog/types@1.384.3':
-    resolution: {integrity: sha512-AmLkg7UC2P6cbQFIoB3VmkO6PF8SVi6lGqWYS6/BoIsutKa6QdOIvB1JdurMuw2N2J5ixkf5OsnJ4dsBInjsyg==}
+  '@posthog/types@1.386.0':
+    resolution: {integrity: sha512-v2ywYj9gYQ4C2nyTkk54evord9p54ezXCKQNtyqoIQjxmF+Plpum1JGVunAeNeAUWgMuWWEwGu/1VcbOJsLnLw==}
 
   '@probe.gl/env@4.1.1':
     resolution: {integrity: sha512-+68seNDMVsEegRB47pFA/Ws1Fjy8agcFYXxzorKToyPcD6zd+gZ5uhwoLd7TzsSw6Ydns//2KEszWn+EnNHTbA==}
@@ -3698,8 +3698,8 @@ packages:
     resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
     engines: {node: ^10 || ^12 || >=14}
 
-  posthog-js@1.384.3:
-    resolution: {integrity: sha512-+taf9uIQZ3wcnyCEUp4fJOF9AGquU3p6g/Z+cRWAjPAprACih+ZSBxm2YixNkVCK+dmf8BLYqhrFYYcgMmF4Ug==}
+  posthog-js@1.386.0:
+    resolution: {integrity: sha512-7dJpcf0fhaE1o+Q5RX76JybIFvJg7nKLolnbDecgQ0Ei4gIgJ0ndyzpr8c1WPeMuthuSndU0VefciRxvQT0olw==}
 
   potpack@2.1.0:
     resolution: {integrity: sha512-pcaShQc1Shq0y+E7GqJqvZj8DTthWV1KeHGdi0Z6IAin2Oi3JnLCOfwnCo84qc+HAp52wT9nK9H7FAJp5a44GQ==}
@@ -5293,11 +5293,11 @@ snapshots:
 
   '@nodable/entities@2.1.1': {}
 
-  '@posthog/core@1.31.3':
+  '@posthog/core@1.32.0':
     dependencies:
-      '@posthog/types': 1.384.3
+      '@posthog/types': 1.386.0
 
-  '@posthog/types@1.384.3': {}
+  '@posthog/types@1.386.0': {}
 
   '@probe.gl/env@4.1.1': {}
 
@@ -8424,10 +8424,10 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  posthog-js@1.384.3:
+  posthog-js@1.386.0:
     dependencies:
-      '@posthog/core': 1.31.3
-      '@posthog/types': 1.384.3
+      '@posthog/core': 1.32.0
+      '@posthog/types': 1.386.0
       core-js: 3.49.0
       dompurify: 3.4.9
       fflate: 0.4.8
