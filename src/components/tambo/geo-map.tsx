@@ -333,7 +333,13 @@ function transformQueryToLayer(
   // Fill expression legend/ramp domain: numeric expressions drive min/max,
   // explicit-color expressions have no scalar domain (gradient legend hidden).
   const exprStats = opts.fillColorExpression ? evaluateExpressionStats(rows, opts.fillColorExpression) : null;
-  const legendValues = (vals: number[]) => (exprStats ? (exprStats.kind === "number" ? exprStats.values : []) : vals);
+  const legendValues = (vals: number[]) => {
+    if (!exprStats) return vals;
+    if (exprStats.kind === "number") return exprStats.values;
+    if (exprStats.kind === "color") return [];
+    // invalid expression: degrade to the data's own valueColumn domain, not 0-1.
+    return vals;
+  };
 
   // Priority 2: WKB binary → GeoArrow zero-copy rendering (no JSON parse, no JS objects)
   // Auto-detected GEOMETRY/WKB columns are extracted as Uint8Array[] by runQuery().
