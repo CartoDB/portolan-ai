@@ -19,7 +19,15 @@ export const insightCardSchema = z.object({
     .describe("Supporting data points for this insight"),
   severity: z.enum(["info", "warning", "critical", "positive"]).optional().describe("Severity or tone of the insight"),
   region: z.string().optional().describe("Geographic region this insight applies to"),
-  datasets: z.array(z.string()).optional().describe("Datasets used to derive this insight"),
+  datasets: z
+    .array(
+      z.object({
+        id: z.string().describe("Unique dataset identifier (e.g. the catalog dataset id)"),
+        name: z.string().describe("Human-readable dataset name shown on the chip"),
+      }),
+    )
+    .optional()
+    .describe("Datasets used to derive this insight"),
   sql: z.string().optional().describe("SQL query that would produce this insight"),
 });
 
@@ -30,23 +38,23 @@ const SEVERITY_STYLES: Record<
   { border: string; bg: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   info: {
-    border: "border-blue-500/30",
-    bg: "bg-blue-500/5",
+    border: "border-info/30",
+    bg: "bg-info/5",
     icon: Info,
   },
   warning: {
-    border: "border-amber-500/30",
-    bg: "bg-amber-500/5",
+    border: "border-warning/30",
+    bg: "bg-warning/5",
     icon: AlertTriangle,
   },
   critical: {
-    border: "border-red-500/30",
-    bg: "bg-red-500/5",
+    border: "border-destructive/30",
+    bg: "bg-destructive/5",
     icon: AlertOctagon,
   },
   positive: {
-    border: "border-emerald-500/30",
-    bg: "bg-emerald-500/5",
+    border: "border-success/30",
+    bg: "bg-success/5",
     icon: CheckCircle2,
   },
 };
@@ -93,8 +101,8 @@ export const InsightCard = React.forwardRef<HTMLDivElement, InsightCardProps>(
 
           <div className="flex flex-wrap items-center gap-2 mt-3">
             {datasets?.map((ds) => (
-              <span key={ds} className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                {ds}
+              <span key={ds.id} className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                {ds.name}
               </span>
             ))}
             {sql && (

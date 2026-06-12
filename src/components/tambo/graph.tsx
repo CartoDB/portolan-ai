@@ -145,9 +145,15 @@ export const graphSchema = z.object({
     .describe("Inline chart data. DEPRECATED - prefer queryId + xColumn + yColumns instead."),
   title: z.string().optional().describe("Title for the chart"),
   showLegend: z.boolean().optional().describe("Whether to show the legend"),
-  variant: z.enum(["default", "solid", "bordered"]).optional(),
-  size: z.enum(["default", "sm", "lg"]).optional(),
-  className: z.string().optional(),
+  variant: z
+    .enum(["default", "solid", "bordered"])
+    .optional()
+    .describe("Container style (default: default). solid: filled card background. bordered: outlined card."),
+  size: z
+    .enum(["default", "sm", "lg"])
+    .optional()
+    .describe("Chart size preset (default: default). sm: compact. lg: tall."),
+  className: z.string().optional().describe("Optional additional CSS classes for the chart container"),
 });
 
 export type GraphProps = z.infer<typeof graphSchema>;

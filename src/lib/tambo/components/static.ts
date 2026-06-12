@@ -27,7 +27,9 @@ export const statsGridComponent: TamboComponent = {
 
 export const insightCardComponent: TamboComponent = {
   name: "InsightCard",
-  description: "Highlights a key finding with supporting details and severity level. Use for analysis conclusions.",
+  description:
+    "Highlights a key finding with supporting details and severity level. Use for analysis conclusions. " +
+    "The datasets prop is an array of { id, name } objects, one per source dataset.",
   component: InsightCard,
   propsSchema: insightCardSchema,
 };
