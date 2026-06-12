@@ -33,9 +33,13 @@ export function extractIdentifiers(expr: string): string[] {
   const noStrings = expr.replace(/'[^']*'|"[^"]*"/g, "");
   const noProps = noStrings.replace(/\.\s*[A-Za-z_$][A-Za-z0-9_$]*/g, "");
   const matches = noProps.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? [];
+  const seen = new Set<string>();
   const out: string[] = [];
   for (const m of matches) {
-    if (!RESERVED.has(m) && !out.includes(m)) out.push(m);
+    if (!RESERVED.has(m) && !seen.has(m)) {
+      seen.add(m);
+      out.push(m);
+    }
   }
   return out;
 }
@@ -132,6 +136,7 @@ export function evaluateExpressionStats(
         values.push(n);
       }
     } else if (Array.isArray(r)) {
+      // One color array result is enough to classify the whole expression.
       return { kind: "color", values: [] };
     }
   }
