@@ -1,5 +1,5 @@
 import type { Suggestion } from "@tambo-ai/react";
-import { TamboProvider, useTambo, useTamboThreadInput, useTamboThreadList } from "@tambo-ai/react";
+import { TamboProvider, useTambo, useTamboContextAttachment, useTamboThreadList } from "@tambo-ai/react";
 import { TamboMcpProvider } from "@tambo-ai/react/mcp";
 import { ChevronDown, ChevronLeft, ChevronRight, Clock, MessageSquare, Plus, Share2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,8 +34,7 @@ import { usePageBootstrap } from "@/lib/use-page-bootstrap";
 import { useUrlParamsSync } from "@/lib/use-url-params";
 import { basePath, cn } from "@/lib/utils";
 import { resolveCatalog } from "@/services/catalogs";
-import { getActivePanels } from "@/services/panel-store";
-import { getQueryResult } from "@/services/query-store";
+import { buildPanelSnapshot, getActivePanels, getPanelById } from "@/services/panel-store";
 
 /* ── Helper: extract thread preview name ──────────────────────────── */
 
@@ -198,7 +197,6 @@ function ExplorerLayout({ suggestions: defaultSuggestions, slug }: { suggestions
   // Mobile: "collapsed" = input bar at bottom, "expanded" = full-screen chat
   const [mobileChat, setMobileChat] = useState<"collapsed" | "expanded">("collapsed");
   const { messages } = useTambo();
-  const { value: inputValue, setValue: setInputValue } = useTamboThreadInput();
 
   // Auto-expand mobile chat when a new message arrives (user submitted)
   const prevMessageCount = useRef(messages.length);
@@ -233,22 +231,55 @@ function ExplorerLayout({ suggestions: defaultSuggestions, slug }: { suggestions
 
   const isEmpty = useMemo(() => !messages || messages.filter((m) => m.role !== "system").length === 0, [messages]);
 
+  // @panel mentions: nothing is written into the textarea. The panel's data snapshot
+  // travels to the AI as a one-shot context attachment for the next message, and the
+  // chips render straight from those attachments (the SDK clears them after send).
+  const { attachments, addContextAttachment, removeContextAttachment } = useTamboContextAttachment();
+  const panelAttachmentIds = useRef<Map<string, string>>(new Map());
+
+  const panelMentions = useMemo(
+    () =>
+      attachments
+        .filter((a) => a.type === "panel")
+        .map((a) => ({ id: a.id, type: "panel", label: a.displayName ?? "Panel" })),
+    [attachments],
+  );
+
   const handleMentionPanel = useCallback(
-    (_panelId: string, componentName: string, title: string) => {
-      const mention = `@panel:${componentName}("${title}") `;
-      setInputValue(inputValue ? `${inputValue}${mention}` : mention);
+    (panelId: string, componentName: string, title: string) => {
+      const existingId = panelAttachmentIds.current.get(panelId);
+      const stillAttached = existingId && attachments.some((a) => a.id === existingId);
+      if (!stillAttached) {
+        const panel = getPanelById(panelId) ?? { id: panelId, componentName, title };
+        const attachment = addContextAttachment({
+          context: `Dashboard panel the user attached to this message:\n${JSON.stringify(buildPanelSnapshot(panel), null, 2)}`,
+          displayName: title || componentName,
+          type: "panel",
+        });
+        panelAttachmentIds.current.set(panelId, attachment.id);
+      }
       setIsChatOpen(true);
       setMobileChat("expanded");
     },
-    [inputValue, setInputValue],
+    [attachments, addContextAttachment],
   );
 
   const removeMention = useCallback(
-    (mention: string) => {
-      setInputValue(inputValue.replace(mention, "").replace(/ {2,}/g, " ").trim());
+    (attachmentId: string) => {
+      removeContextAttachment(attachmentId);
     },
-    [inputValue, setInputValue],
+    [removeContextAttachment],
   );
+
+  // Prune the panelId -> attachmentId dedup map when attachments go away
+  // (chip removal or the SDK's post-send clear).
+  useEffect(() => {
+    for (const [panelId, attachmentId] of panelAttachmentIds.current) {
+      if (!attachments.some((a) => a.id === attachmentId)) {
+        panelAttachmentIds.current.delete(panelId);
+      }
+    }
+  }, [attachments]);
 
   return (
     <div className="flex h-screen bg-background relative grain">
@@ -306,7 +337,7 @@ function ExplorerLayout({ suggestions: defaultSuggestions, slug }: { suggestions
 
                 <div className="p-3 border-t border-border/30">
                   <MessageInput variant="bordered">
-                    <MentionChips value={inputValue} onRemove={removeMention} />
+                    <MentionChips mentions={panelMentions} onRemove={removeMention} />
                     <MessageInputTextarea placeholder="Ask about weather, terrain, buildings, population..." />
                     <MessageInputToolbar>
                       <MessageInputFileButton />
@@ -412,7 +443,7 @@ function ExplorerLayout({ suggestions: defaultSuggestions, slug }: { suggestions
         {/* Input bar - always visible */}
         <div className={cn("p-2", mobileChat === "expanded" && "border-t border-border/30")}>
           <MessageInput variant="bordered">
-            <MentionChips value={inputValue} onRemove={removeMention} />
+            <MentionChips mentions={panelMentions} onRemove={removeMention} />
             <MessageInputTextarea placeholder="Ask about weather, terrain, buildings, population..." />
             <MessageInputToolbar>
               <MessageInputSubmitButton />
@@ -443,30 +474,15 @@ async function listPanelResources(search?: string) {
 
 async function getPanelResource(uri: string) {
   const match = uri.match(/^panel:\/\/(\w+)\/(.+)$/);
-  if (!match) return { uri, text: `Unknown resource: ${uri}` };
+  if (!match) return { contents: [{ uri, mimeType: "text/plain", text: `Unknown resource: ${uri}` }] };
 
   const [, , panelId] = match;
-  const panels = getActivePanels();
-  const panel = panels.find((p) => p.id === panelId);
-  if (!panel) return { uri, text: `Panel '${panelId}' not found` };
+  const panel = getPanelById(panelId);
+  if (!panel) return { contents: [{ uri, mimeType: "text/plain", text: `Panel '${panelId}' not found` }] };
 
-  const info: Record<string, unknown> = {
-    panelId: panel.id,
-    componentName: panel.componentName,
-    title: panel.title,
+  return {
+    contents: [{ uri, mimeType: "application/json", text: JSON.stringify(buildPanelSnapshot(panel), null, 2) }],
   };
-
-  if (panel.queryId) {
-    info.queryId = panel.queryId;
-    const result = getQueryResult(panel.queryId);
-    if (result) {
-      info.rowCount = result.rows.length;
-      info.columns = result.rows[0] ? Object.keys(result.rows[0]) : [];
-      info.sampleRows = result.rows.slice(0, 3);
-    }
-  }
-
-  return { uri, text: JSON.stringify(info, null, 2), mimeType: "application/json" };
 }
 
 /* ── Page ──────────────────────────────────────────────────────────── */
@@ -515,7 +531,7 @@ export default function ExplorePage() {
     >
       <TamboMcpProvider>
         {error && (
-          <div className="fixed top-2 left-1/2 -translate-x-1/2 z-40 max-w-md w-[calc(100%-1rem)] glass-panel rounded-xl border border-red-500/30 px-4 py-2.5 text-sm text-foreground">
+          <div className="fixed top-2 left-1/2 -translate-x-1/2 z-40 max-w-md w-[calc(100%-1rem)] glass-panel rounded-xl border border-destructive/30 px-4 py-2.5 text-sm text-foreground">
             Could not load the {catalog.title} catalog index. {error}
           </div>
         )}

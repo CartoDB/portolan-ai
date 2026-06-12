@@ -1,31 +1,21 @@
 /**
  * Shared mention chip strip for chat inputs.
  *
- * Renders @-mentions as colored pills above the textarea. Clicking a chip removes it.
- * Used by both the explore page (@panel mentions) and style editor (@source/@layer mentions).
- *
- * Mention format: @type:id (e.g. @panel:GeoMap, @source:versatiles-shortbread, @layer:water)
+ * Renders referenced items (e.g. dashboard panels) as colored pills above the
+ * textarea. Chips are driven by state (context attachments), NOT by parsing the
+ * textarea text, so the input stays purely the user's own words. Clicking a chip
+ * removes it.
  */
 
-import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-export interface MentionToken {
-  full: string;
-  type: string;
+export interface MentionChipItem {
+  /** Removal handle (context attachment id). */
   id: string;
-}
-
-/** Regex matching all @type:id mentions. */
-const MENTION_RE = /@(\w+):(\S+)/g;
-
-/** Extract mention tokens from input text. */
-export function extractMentions(text: string): MentionToken[] {
-  const mentions: MentionToken[] = [];
-  for (const match of text.matchAll(MENTION_RE)) {
-    mentions.push({ full: match[0], type: match[1], id: match[2] });
-  }
-  return mentions;
+  /** Mention kind, drives chip color and badge (e.g. "panel"). */
+  type: string;
+  /** Human-readable label shown in the chip. */
+  label: string;
 }
 
 /** Color mapping for mention types. */
@@ -56,20 +46,13 @@ function typeLabel(type: string): string {
   }
 }
 
-/** Strip surrounding quotes from mention IDs (e.g. panel mentions include title in parens). */
-function displayId(id: string): string {
-  // Remove trailing parenthesized text: GeoMap("My Map") → GeoMap
-  return id.replace(/\(.*\)$/, "").replace(/^["']|["']$/g, "");
-}
-
 interface MentionChipsProps {
-  value: string;
-  onRemove: (mention: string) => void;
+  mentions: MentionChipItem[];
+  onRemove: (id: string) => void;
   className?: string;
 }
 
-export function MentionChips({ value, onRemove, className }: MentionChipsProps) {
-  const mentions = useMemo(() => extractMentions(value), [value]);
+export function MentionChips({ mentions, onRemove, className }: MentionChipsProps) {
   if (mentions.length === 0) return null;
 
   return (
@@ -78,19 +61,19 @@ export function MentionChips({ value, onRemove, className }: MentionChipsProps) 
         const color = mentionColor(m.type);
         return (
           <button
-            key={m.full}
+            key={m.id}
             type="button"
-            onClick={() => onRemove(m.full)}
+            onClick={() => onRemove(m.id)}
             className={cn(
               "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors",
               color.bg,
               color.text,
               color.hover,
             )}
-            title={`Remove ${m.full}`}
+            title={`Remove ${m.label}`}
           >
             <span>{typeLabel(m.type)}</span>
-            <span className="truncate max-w-[120px]">{displayId(m.id)}</span>
+            <span className="truncate max-w-[160px]">{m.label}</span>
             <span className="text-[9px] opacity-60 ml-0.5">&times;</span>
           </button>
         );
