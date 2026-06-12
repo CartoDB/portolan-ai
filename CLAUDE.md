@@ -303,16 +303,18 @@ Packages: `@geoarrow/deck.gl-geoarrow@0.4.1`, `@walkthru-earth/objex-utils@1.5.0
 
 Mentions use `@type:id` format in chat input, rendered as colored chip pills above the textarea via `MentionChips` (`src/components/tambo/mention-chips.tsx`).
 
-| Type | Format | Page | References |
-|------|--------|------|------------|
-| `@panel` | `@panel:GeoMap("title")` | `/:slug` (explore) | Dashboard panel (via `@` button on panel header) |
+| Type | Mechanism | Page | References |
+|------|-----------|------|------------|
+| `@panel` | Context attachment + chip (no text token) | `/:slug` (explore) | Dashboard panel (via `@` button on panel header) |
 
-**Panel resources** (`/:slug`): `listResources`/`getResource` on `TamboProvider` expose active dashboard panels as `panel://ComponentName/panelId` resources. `DashboardCanvas` syncs panel info to `panel-store.ts`. A panel resource includes queryId, row count, columns, and sample rows. Mentions are user-initiated references to existing UI elements, tools are AI-callable functions, and datasets are reached through tools (`listCatalogDatasets`, `describeDataset`) because the AI composes SQL around them.
+**Panel mentions** (`/:slug`): the `@` button writes NOTHING into the textarea. It adds a one-shot context attachment (`useTamboContextAttachment`) carrying the panel snapshot (componentName, title, queryId, row count, columns, sample rows via `buildPanelSnapshot` in `panel-store.ts`). `MentionChips` renders chips directly from `attachments` (filtered to `type === "panel"`, labeled by `displayName`), NOT by parsing input text. Chip × calls `removeContextAttachment(id)`; the SDK auto-clears attachments after send. A `panelId → attachmentId` ref map dedupes repeat clicks and is pruned when attachments change. This design exists because the SDK (v1.2.8) does not resolve `@type:id` text into resource fetches on send, and raw tokens in a plain textarea are noisy UX.
+
+**Panel resources** (`/:slug`): `listResources`/`getResource` on `TamboProvider` expose active dashboard panels as `panel://ComponentName/panelId` resources for the resource picker dropdown. `DashboardCanvas` syncs panel info to `panel-store.ts`. A panel resource includes queryId, row count, columns, and sample rows. Mentions are user-initiated references to existing UI elements, tools are AI-callable functions, and datasets are reached through tools (`listCatalogDatasets`, `describeDataset`) because the AI composes SQL around them.
 
 ## Conventions
 
 - Never show "Tambo", "DuckDB", "Parquet", "Iceberg", "deck.gl" in the UI.
-- **Settings**: Gear icon (`<SettingsButton />`) on both pages, popover with theme toggle and query limit (presets 500/5K/10K/50K + custom 100-100000). Portal to `document.body` to avoid header backdrop-blur transparency. Stored in `settings-store.ts` (localStorage `walkthru-settings`), fields: `theme`, `queryLimit`.
+- **Settings**: Gear icon (`<SettingsButton />`) on both pages, popover with theme toggle and query limit (presets 500/5K/10K/50K + custom 100-100000). Portal to `document.body` to avoid header backdrop-blur transparency. Stored in `settings-store.ts` (localStorage `portolan-settings`), fields: `theme`, `queryLimit`.
 - Theme: system detection on first visit, settings popover cycles Dark/Light/System. `useThemeEffect()` applies it in `App.tsx`.
 - Map basemap: CARTO Dark Matter / Positron, always forced to `auto` (follows the user's theme). AI basemap prop is ignored.
 - **Thread delete**: thread history dropdown (Trash icon + inline confirm). `client.threads.delete(threadId, { userKey })`. **Thread rename**: inline edit (Pencil icon). `client.threads.update(threadId, { userKey, name })`.
