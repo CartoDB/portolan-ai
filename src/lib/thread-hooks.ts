@@ -1,7 +1,7 @@
 import { type TamboThreadMessage, useTambo } from "@tambo-ai/react";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
-import { runQuery } from "@/services/duckdb-wasm";
+import { registerResultTable, runQuery } from "@/services/duckdb-wasm";
 import { getQueryResult, storeQueryResultWithId } from "@/services/query-store";
 
 /**
@@ -299,7 +299,10 @@ export function useReplayQueries(messages: TamboThreadMessage[]) {
             .then((result) => {
               if (result.queryId) {
                 const stored = getQueryResult(result.queryId);
-                if (stored) storeQueryResultWithId(originalQueryId, stored);
+                if (stored) {
+                  storeQueryResultWithId(originalQueryId, stored);
+                  void registerResultTable(originalQueryId, stored.arrowIPC);
+                }
               }
             })
             .catch(() => {
