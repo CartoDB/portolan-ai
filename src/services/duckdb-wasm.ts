@@ -12,11 +12,43 @@
 
 import { transform4326Expr } from "./geo";
 import { storeQueryResult } from "./query-store";
+import { touchLru } from "./registered-tables";
 
 let db: any = null;
 let initPromise: Promise<any> | null = null;
 let _initAttempts = 0;
 const MAX_INIT_RETRIES = 3;
+
+/** Cap on how many queryId tables we keep materialized in WASM memory. Matches the store's specific-id cap. */
+const REGISTERED_TABLE_CAP = 40;
+let registeredOrder: string[] = [];
+
+/**
+ * Register a computed Arrow result back into DuckDB-WASM as a persistent table
+ * named after its queryId, so a follow-up `SELECT * FROM qr_5` reads cached rows
+ * with zero recompute. Best-effort: any failure leaves the queryId simply not
+ * reusable that turn and never breaks the user-facing result.
+ */
+export async function registerResultTable(id: string, arrowIPC?: Uint8Array): Promise<void> {
+  if (!id || !arrowIPC) return;
+  try {
+    const instance = await initDuckDB();
+    const conn = await instance.connect();
+    try {
+      const { next, evict } = touchLru(registeredOrder, id, REGISTERED_TABLE_CAP);
+      registeredOrder = next;
+      for (const old of evict) {
+        await conn.query(`DROP TABLE IF EXISTS "${old}"`);
+      }
+      await conn.query(`DROP TABLE IF EXISTS "${id}"`);
+      await conn.insertArrowFromIPCStream(arrowIPC, { name: id, create: true });
+    } finally {
+      await conn.close();
+    }
+  } catch {
+    /* registration is best-effort, never surface to the user */
+  }
+}
 
 /** Initialize DuckDB-WASM singleton with retry on chunk load failure. */
 async function initDuckDB(): Promise<any> {
@@ -481,6 +513,9 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
       geometryColumn: geomColumn ?? undefined,
     });
 
+    // Make this result reusable as a DuckDB table named after its queryId.
+    await registerResultTable(queryId, arrowIPC);
+
     // Return only metadata + 3 sample rows to the LLM (saves tokens!)
     // When geometry was auto-detected, tell the AI so it doesn't try to reference
     // synthetic lat/lng columns in follow-up SQL - they only exist in the wrapped result.
@@ -586,6 +621,9 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
               wkbArrays,
               geometryColumn: geomCols[0],
             });
+
+            // WKB fallback path serializes no Arrow IPC, so this is a no-op skip.
+            await registerResultTable(queryId, undefined);
 
             return {
               queryId,
