@@ -520,12 +520,13 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
     // When geometry was auto-detected, tell the AI so it doesn't try to reference
     // synthetic lat/lng columns in follow-up SQL - they only exist in the wrapped result.
     const geometryNote = geomColumn
-      ? `CRITICAL: "lat" and "lng" columns were AUTO-GENERATED from geometry column "${geomColumn}" (${isNativeGeometry ? "GEOMETRY" : "WKB BLOB"}). ` +
-        `They do NOT exist in the raw Parquet file. NEVER SELECT lat/lng directly - they will cause "column not found" errors. ` +
-        `For follow-up queries: (1) Use SELECT * - the system re-generates lat/lng automatically. ` +
-        `(2) To pick specific columns: SELECT * EXCLUDE (unwanted_col1, unwanted_col2) FROM file. ` +
-        `(3) To add computed columns: SELECT *, my_expr AS alias FROM (SELECT * FROM file LIMIT 500). ` +
-        `(4) For direct geometry access: ST_Y(ST_GeomFromWKB("${geomColumn}")) for lat, ST_X(ST_GeomFromWKB("${geomColumn}")) for lng.`
+      ? `"lat" and "lng" were AUTO-GENERATED from geometry column "${geomColumn}" (${isNativeGeometry ? "GEOMETRY" : "WKB BLOB"}). ` +
+        `They do NOT exist in the raw Parquet file, so do not SELECT lat/lng when querying the file directly. ` +
+        `To refine this result, query the returned queryId AS A TABLE, for example SELECT * FROM ${queryId} or ` +
+        `SELECT nearest_type, count(*) FROM ${queryId} GROUP BY ALL. That table already has real lat, lng and ` +
+        `__geo_wkb columns, so re-sorting, re-aggregating and summarizing need no recompute. ` +
+        `To re-render geometry from it, use ST_GeomFromWKB(__geo_wkb) AS geom. ` +
+        `When you instead go back to the raw file, use SELECT * so geometry re-detects and lat/lng regenerate.`
       : undefined;
 
     return {
