@@ -1,4 +1,4 @@
-import type { TamboThreadMessage } from "@tambo-ai/react";
+import { type TamboThreadMessage, useTambo } from "@tambo-ai/react";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { runQuery } from "@/services/duckdb-wasm";
@@ -239,8 +239,15 @@ export function getMessageImages(
  */
 export function useReplayQueries(messages: TamboThreadMessage[]) {
   const replayedRef = useRef(new Set<string>());
+  const { isIdle } = useTambo();
 
   useEffect(() => {
+    // Skip the scan while a response is streaming/generating. The SDK rebuilds the
+    // messages array reference on every token, so without this guard the full scan
+    // re-runs per tick. Restored threads load with isIdle=true, and when streaming
+    // finishes isIdle flips back to true, re-triggering the effect, so completed
+    // tool calls are still replayed.
+    if (!isIdle) return;
     if (!messages.length) return;
 
     // Build a flat index of all tool_result blocks across all messages
@@ -301,5 +308,5 @@ export function useReplayQueries(messages: TamboThreadMessage[]) {
         }
       }
     }
-  }, [messages]);
+  }, [messages, isIdle]);
 }

@@ -592,8 +592,10 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
             };
           }
         }
-      } catch {
+      } catch (retryErr) {
         /* fallback failed - throw original error */
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        console.warn(`DuckDB geometry retry path failed: ${retryMsg}. Throwing original error.`);
       }
     }
     throw new Error(`DuckDB query error: ${msg}`);
