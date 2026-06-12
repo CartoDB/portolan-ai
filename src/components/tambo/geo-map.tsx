@@ -4,6 +4,7 @@ import * as React from "react";
 import { lazy, Suspense, useMemo } from "react";
 import { z } from "zod";
 import { readStorage, removeStorage, writeStorage } from "@/lib/storage";
+import { evaluateExpressionStats } from "@/services/geo/style-expressions";
 import { applyTimeFilter, setCrossFilter, useQueryResult, useTimeFilter } from "@/services/query-store";
 import type { Basemap, ColorScheme, LayerConfig, LayerType } from "./geo-map-deckgl";
 import { useInDashboardPanel } from "./panel-context";
@@ -11,6 +12,34 @@ import { useInDashboardPanel } from "./panel-context";
 /* ── Schema ────────────────────────────────────────────────────────── */
 
 const COLOR_SCHEMES = ["blue-red", "viridis", "plasma", "warm", "cool", "spectral"] as const;
+
+const EXPRESSION_SYNTAX =
+  "Restricted JS over the query result columns (EXACT case-sensitive names, e.g. USP_TX_DEN). " +
+  "Allowed: arithmetic, comparisons, ternary, && || !, array literals. NO function calls. " +
+  "Alias non-identifier column names in SQL first.";
+
+const styleExpressionFields = {
+  fillColorExpression: z
+    .string()
+    .optional()
+    .describe(
+      `Per-feature color expression. ${EXPRESSION_SYNTAX} ` +
+        "Return a NUMBER to ramp it through colorScheme (legend follows), or an [r,g,b] / [r,g,b,a] array (0-255) for explicit categorical colors. " +
+        'Example: "USP_TX_DEN > 50 ? [215,48,39,200] : [5,113,176,160]". Overrides valueColumn coloring. Not supported on arc layers.',
+    ),
+  elevationExpression: z
+    .string()
+    .optional()
+    .describe(
+      `Per-feature extrusion height expression (number). Requires extruded=true. ${EXPRESSION_SYNTAX} Example: "n_floors * 100".`,
+    ),
+  radiusExpression: z
+    .string()
+    .optional()
+    .describe(
+      `Per-feature point radius in meters (number). Scatterplot/point layers only. ${EXPRESSION_SYNTAX} Example: "population / 100".`,
+    ),
+};
 
 const layerEntrySchema = z.object({
   id: z.string().describe("Unique layer ID for add/remove/update"),
@@ -44,6 +73,7 @@ const layerEntrySchema = z.object({
   colorScheme: z.enum(COLOR_SCHEMES).optional().describe("Color palette for this layer"),
   colorMetric: z.string().optional().describe("Legend label for this layer's color metric"),
   opacity: z.number().optional().describe("Layer opacity 0-1 (default 0.85)"),
+  ...styleExpressionFields,
   visible: z.boolean().optional().describe("Whether this layer is visible (default true)"),
 });
 
@@ -126,6 +156,7 @@ export const geoMapSchema = z.object({
     ),
   colorMetric: z.string().optional().describe("Legend label for the color metric (e.g. 'Population Density')"),
   colorScheme: z.enum(COLOR_SCHEMES).optional().describe("Color palette"),
+  ...styleExpressionFields,
   extruded: z.boolean().optional().describe("3D extrusion based on value"),
   basemap: z
     .enum(["auto", "dark", "light"])
@@ -286,6 +317,9 @@ function transformQueryToLayer(
     destLngColumn: string;
     colorScheme?: ColorScheme;
     opacity?: number;
+    fillColorExpression?: string;
+    elevationExpression?: string;
+    radiusExpression?: string;
     columnArrays?: Record<string, ArrayLike<any>>;
     arrowIPC?: Uint8Array;
     wkbArrays?: Uint8Array[];
@@ -295,6 +329,17 @@ function transformQueryToLayer(
   if (rows.length === 0 && !(opts.wkbArrays && opts.wkbArrays.length > 0)) {
     return { layerConfig: null, type: opts.layerType ?? "h3", values: [], featureCount: 0 };
   }
+
+  // Fill expression legend/ramp domain: numeric expressions drive min/max,
+  // explicit-color expressions have no scalar domain (gradient legend hidden).
+  const exprStats = opts.fillColorExpression ? evaluateExpressionStats(rows, opts.fillColorExpression) : null;
+  const legendValues = (vals: number[]) => {
+    if (!exprStats) return vals;
+    if (exprStats.kind === "number") return exprStats.values;
+    if (exprStats.kind === "color") return [];
+    // invalid expression: degrade to the data's own valueColumn domain, not 0-1.
+    return vals;
+  };
 
   // Priority 2: WKB binary → GeoArrow zero-copy rendering (no JSON parse, no JS objects)
   // Auto-detected GEOMETRY/WKB columns are extracted as Uint8Array[] by runQuery().
@@ -312,7 +357,8 @@ function transformQueryToLayer(
       const val = row[opts.valueColumn];
       if (val != null) vals.push(toNum(val));
     }
-    const { min, max } = computePercentileRange(vals);
+    const effectiveVals = legendValues(vals);
+    const { min, max } = computePercentileRange(effectiveVals);
     return {
       layerConfig: {
         id: opts.id,
@@ -321,6 +367,9 @@ function transformQueryToLayer(
         wkbArrays: opts.wkbArrays,
         colorScheme: opts.colorScheme,
         opacity: opts.opacity,
+        fillColorExpression: opts.fillColorExpression,
+        elevationExpression: opts.elevationExpression,
+        radiusExpression: opts.radiusExpression,
         minVal: min,
         maxVal: max,
         columnArrays: opts.columnArrays,
@@ -338,7 +387,7 @@ function transformQueryToLayer(
         },
       },
       type: "wkb",
-      values: vals,
+      values: effectiveVals,
       featureCount: opts.wkbArrays.length,
     };
   }
@@ -400,7 +449,8 @@ function transformQueryToLayer(
         if (typeof lat === "number" && typeof lng === "number") {
           const val = row[opts.valueColumn];
           const numVal = val != null ? toNum(val) : undefined;
-          const item: any = { lat, lng, value: numVal };
+          // Full row spread so style expressions can reference any result column
+          const item: any = { ...row, lat, lng, value: numVal };
           if (opts.radiusColumn && typeof row[opts.radiusColumn] === "number") item.radius = row[opts.radiusColumn];
           data.push(item);
           if (numVal != null) vals.push(numVal);
@@ -457,7 +507,8 @@ function transformQueryToLayer(
     }
   }
 
-  const { min, max } = computePercentileRange(vals);
+  const effectiveVals = legendValues(vals);
+  const { min, max } = computePercentileRange(effectiveVals);
 
   return {
     layerConfig:
@@ -468,6 +519,9 @@ function transformQueryToLayer(
             data,
             colorScheme: opts.colorScheme,
             opacity: opts.opacity,
+            fillColorExpression: opts.fillColorExpression,
+            elevationExpression: opts.elevationExpression,
+            radiusExpression: opts.radiusExpression,
             minVal: min,
             maxVal: max,
             columnArrays: opts.columnArrays,
@@ -487,7 +541,7 @@ function transformQueryToLayer(
           }
         : null,
     type,
-    values: vals,
+    values: effectiveVals,
     featureCount: data.length,
   };
 }
@@ -515,6 +569,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     zoom = 1,
     colorMetric,
     colorScheme = "blue-red",
+    fillColorExpression,
+    elevationExpression,
+    radiusExpression,
     extruded = false,
     basemap: _basemap = "auto",
     layers: layersProp,
@@ -547,6 +604,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
       destLngColumn,
       colorScheme,
       colorMetric: colorMetric ?? undefined,
+      fillColorExpression,
+      elevationExpression,
+      radiusExpression,
       opacity: undefined,
       visible: true,
     };
@@ -566,6 +626,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     destLngColumn,
     colorScheme,
     colorMetric,
+    fillColorExpression,
+    elevationExpression,
+    radiusExpression,
   ]);
 
   // Thread scope for localStorage keys. queryIds (qr_N) are session counters that
@@ -741,6 +804,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
             destLngColumn: layer.destLngColumn ?? "dest_lng",
             colorScheme: (layer.colorScheme as ColorScheme) ?? colorScheme,
             opacity: layer.opacity,
+            fillColorExpression: layer.fillColorExpression,
+            elevationExpression: layer.elevationExpression,
+            radiusExpression: layer.radiusExpression,
             columnArrays: qr.columnArrays,
             arrowIPC: qr.arrowIPC,
             wkbArrays: qr.wkbArrays,
@@ -790,6 +856,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
             arrowIPC: qr.arrowIPC,
             wkbArrays: qr.wkbArrays,
             opacity: singleLayerOpacity,
+            fillColorExpression,
+            elevationExpression,
+            radiusExpression,
           },
           boundsAcc,
         );
@@ -844,6 +913,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     destLatColumn,
     destLngColumn,
     colorScheme,
+    fillColorExpression,
+    elevationExpression,
+    radiusExpression,
     timeFilter,
     singleLayerVisible,
     singleLayerOpacity,
@@ -1336,6 +1408,8 @@ export const InteractableGeoMap = withTamboInteractable(GeoMap, {
     "To add a layer: update_component_props with layers array including existing layers + the new one. " +
     "To remove a layer: update with layers array excluding that layer. " +
     "To toggle visibility: set visible=false on a layer. " +
+    "Per-feature conditional styling: set fillColorExpression (number → colorScheme ramp, or [r,g,b,a] array for categorical colors), elevationExpression, radiusExpression - restricted JS over EXACT result column names, no function calls. " +
+    "When the user asks to highlight/flag/categorize features by a condition (e.g. 'make buildings over 50m red'), use fillColorExpression, not valueColumn. " +
     "When user says 'zoom into Cairo', update latitude/longitude/zoom. " +
     "When user says 'tilt the map', update pitch (e.g. 45-60 for cinematic). " +
     "When user says 'add population layer', add a new entry to the layers array.",

@@ -14,6 +14,14 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import React, { useEffect, useMemo, useRef } from "react";
 import { useCopyToClipboard } from "@/lib/use-copy-to-clipboard";
+import {
+  compileExpression,
+  makeArrowRowReader,
+  normalizeExpressionColor,
+  normalizeExpressionNumber,
+  type RGBA,
+  safeEvalExpression,
+} from "@/services/geo/style-expressions";
 import { consumeFlyTo, useFlyToVersion } from "@/services/query-store";
 
 /* ── Types ──────────────────────────────────────────────────────── */
@@ -36,6 +44,12 @@ export interface LayerConfig {
   arrowIPC?: Uint8Array;
   /** Raw WKB geometry arrays for objex-utils buildGeoArrowTables (true zero-copy) */
   wkbArrays?: Uint8Array[];
+  /** Restricted JS expression over result columns → number (ramped) or [r,g,b,a] */
+  fillColorExpression?: string;
+  /** Restricted JS expression over result columns → extrusion height (number) */
+  elevationExpression?: string;
+  /** Restricted JS expression over result columns → point radius in meters (number) */
+  radiusExpression?: string;
   /** Column name mappings for GeoArrow layer construction */
   columnMapping?: {
     hexColumn?: string;
@@ -395,6 +409,41 @@ interface HoverDedupState {
   lastIndex: number | null;
 }
 
+/* ── Expression accessor adapters ───────────────────────────────── */
+
+interface LayerExpressions {
+  fill: ReturnType<typeof compileExpression>;
+  elevation: ReturnType<typeof compileExpression>;
+  radius: ReturnType<typeof compileExpression>;
+}
+
+function compileLayerExpressions(config: LayerConfig): LayerExpressions {
+  return {
+    fill: config.fillColorExpression ? compileExpression(config.fillColorExpression) : null,
+    elevation: config.elevationExpression ? compileExpression(config.elevationExpression) : null,
+    radius: config.radiusExpression ? compileExpression(config.radiusExpression) : null,
+  };
+}
+
+function hasAnyExpression(ex: LayerExpressions): boolean {
+  return !!(ex.fill || ex.elevation || ex.radius);
+}
+
+function allExpressionIdentifiers(ex: LayerExpressions): string[] {
+  return [
+    ...new Set([
+      ...(ex.fill?.identifiers ?? []),
+      ...(ex.elevation?.identifiers ?? []),
+      ...(ex.radius?.identifiers ?? []),
+    ]),
+  ];
+}
+
+/** JS-object rows: GeoJSON features expose columns under .properties, others directly */
+function jsRow(d: any): Record<string, unknown> {
+  return d?.properties ?? d ?? {};
+}
+
 function buildLayers(
   configs: LayerConfig[],
   minVal: number,
@@ -441,6 +490,9 @@ function buildLayers(
     const hi = config.maxVal ?? maxVal;
     const layerOpacity = config.opacity ?? 0.85;
     const useGeoArrow = canUseGeoArrow(config);
+    const ramp = (v: number): RGBA => valueToColor(v, lo, hi, scheme);
+    const exprs = compileLayerExpressions(config);
+    const exprTriggers = [config.fillColorExpression, config.elevationExpression, config.radiusExpression];
 
     switch (config.type) {
       case "h3":
@@ -455,14 +507,19 @@ function buildLayers(
               highPrecision: "auto",
               coverage: 0.92,
               getHexagon: (d: any) => d.hex ?? "",
-              getFillColor: (d: any) =>
-                d.value != null ? valueToColor(d.value, lo, hi, scheme) : [100, 150, 255, 120],
-              getElevation: (d: any) => {
-                if (!extruded || d.value == null) return 0;
-                const range = hi - lo || 1;
-                const t = (d.value - lo) / range;
-                return t * 500;
-              },
+              getFillColor: exprs.fill
+                ? (d: any) =>
+                    normalizeExpressionColor(safeEvalExpression(exprs.fill!, jsRow(d)), ramp, [100, 150, 255, 120])
+                : (d: any) => (d.value != null ? valueToColor(d.value, lo, hi, scheme) : [100, 150, 255, 120]),
+              getElevation: exprs.elevation
+                ? (d: any) =>
+                    extruded ? (normalizeExpressionNumber(safeEvalExpression(exprs.elevation!, jsRow(d))) ?? 0) : 0
+                : (d: any) => {
+                    if (!extruded || d.value == null) return 0;
+                    const range = hi - lo || 1;
+                    const t = (d.value - lo) / range;
+                    return t * 500;
+                  },
               elevationScale: 50,
               opacity: layerOpacity,
               onClick: makeClickHandler((info: any) => {
@@ -471,8 +528,8 @@ function buildLayers(
               }, "h3"),
               onHover: makeHoverHandler(layerId, "h3"),
               updateTriggers: {
-                getFillColor: [lo, hi, scheme],
-                getElevation: [lo, hi, extruded],
+                getFillColor: [lo, hi, scheme, ...exprTriggers],
+                getElevation: [lo, hi, extruded, ...exprTriggers],
               },
             }),
           );
@@ -489,14 +546,19 @@ function buildLayers(
               filled: true,
               extruded,
               getPentagon: (d: any) => d.pentagon ?? "",
-              getFillColor: (d: any) =>
-                d.value != null ? valueToColor(d.value, lo, hi, scheme) : [100, 150, 255, 120],
-              getElevation: (d: any) => {
-                if (!extruded || d.value == null) return 0;
-                const range = hi - lo || 1;
-                const t = (d.value - lo) / range;
-                return t * 500;
-              },
+              getFillColor: exprs.fill
+                ? (d: any) =>
+                    normalizeExpressionColor(safeEvalExpression(exprs.fill!, jsRow(d)), ramp, [100, 150, 255, 120])
+                : (d: any) => (d.value != null ? valueToColor(d.value, lo, hi, scheme) : [100, 150, 255, 120]),
+              getElevation: exprs.elevation
+                ? (d: any) =>
+                    extruded ? (normalizeExpressionNumber(safeEvalExpression(exprs.elevation!, jsRow(d))) ?? 0) : 0
+                : (d: any) => {
+                    if (!extruded || d.value == null) return 0;
+                    const range = hi - lo || 1;
+                    const t = (d.value - lo) / range;
+                    return t * 500;
+                  },
               elevationScale: 50,
               opacity: layerOpacity,
               onClick: makeClickHandler((info: any) => {
@@ -505,8 +567,8 @@ function buildLayers(
               }, "a5"),
               onHover: makeHoverHandler(layerId, "a5"),
               updateTriggers: {
-                getFillColor: [lo, hi, scheme],
-                getElevation: [lo, hi, extruded],
+                getFillColor: [lo, hi, scheme, ...exprTriggers],
+                getElevation: [lo, hi, extruded, ...exprTriggers],
               },
             }),
           );
@@ -529,6 +591,7 @@ function buildLayers(
             }
             const table = buildGeoArrowPointTable(cols[latCol], cols[lngCol], extra);
 
+            const readRow = hasAnyExpression(exprs) ? makeArrowRowReader(table, allExpressionIdentifiers(exprs)) : null;
             result.push(
               new GeoArrowScatterplotLayer({
                 id: `scatter-ga-${layerId}`,
@@ -537,16 +600,28 @@ function buildLayers(
                 pickable: true,
                 filled: true,
                 stroked: true,
-                getRadius: ({ index, data }: any) => {
-                  const v = data.data.getChild("value")?.get(index);
-                  if (v == null) return 8000;
-                  const range = hi - lo || 1;
-                  return 3000 + ((Number(v) - lo) / range) * 30000;
-                },
-                getFillColor: ({ index, data }: any) => {
-                  const v = data.data.getChild("value")?.get(index);
-                  return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 150];
-                },
+                getRadius:
+                  exprs.radius && readRow
+                    ? ({ index }: any) =>
+                        normalizeExpressionNumber(safeEvalExpression(exprs.radius!, readRow(index))) ?? 8000
+                    : ({ index, data }: any) => {
+                        const v = data.data.getChild("value")?.get(index);
+                        if (v == null) return 8000;
+                        const range = hi - lo || 1;
+                        return 3000 + ((Number(v) - lo) / range) * 30000;
+                      },
+                getFillColor:
+                  exprs.fill && readRow
+                    ? ({ index }: any) =>
+                        normalizeExpressionColor(
+                          safeEvalExpression(exprs.fill!, readRow(index)),
+                          ramp,
+                          [100, 150, 255, 150],
+                        )
+                    : ({ index, data }: any) => {
+                        const v = data.data.getChild("value")?.get(index);
+                        return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 150];
+                      },
                 getLineColor: [255, 255, 255, 40],
                 lineWidthMinPixels: 1,
                 radiusMinPixels: 3,
@@ -557,8 +632,8 @@ function buildLayers(
                 }, "scatterplot"),
                 onHover: makeHoverHandler(layerId, "scatterplot"),
                 updateTriggers: {
-                  getFillColor: [lo, hi, scheme],
-                  getRadius: [lo, hi],
+                  getFillColor: [lo, hi, scheme, ...exprTriggers],
+                  getRadius: [lo, hi, ...exprTriggers],
                 },
               }),
             );
@@ -572,14 +647,18 @@ function buildLayers(
                 filled: true,
                 stroked: true,
                 getPosition: (d: any) => [d.lng ?? 0, d.lat ?? 0],
-                getRadius: (d: any) => {
-                  if (d.radius != null) return d.radius;
-                  if (d.value == null) return 8000;
-                  const range = hi - lo || 1;
-                  return 3000 + ((d.value - lo) / range) * 30000;
-                },
-                getFillColor: (d: any) =>
-                  d.value != null ? valueToColor(d.value, lo, hi, scheme) : [100, 150, 255, 150],
+                getRadius: exprs.radius
+                  ? (d: any) => normalizeExpressionNumber(safeEvalExpression(exprs.radius!, jsRow(d))) ?? 8000
+                  : (d: any) => {
+                      if (d.radius != null) return d.radius;
+                      if (d.value == null) return 8000;
+                      const range = hi - lo || 1;
+                      return 3000 + ((d.value - lo) / range) * 30000;
+                    },
+                getFillColor: exprs.fill
+                  ? (d: any) =>
+                      normalizeExpressionColor(safeEvalExpression(exprs.fill!, jsRow(d)), ramp, [100, 150, 255, 150])
+                  : (d: any) => (d.value != null ? valueToColor(d.value, lo, hi, scheme) : [100, 150, 255, 150]),
                 getLineColor: [255, 255, 255, 40],
                 lineWidthMinPixels: 1,
                 radiusMinPixels: 3,
@@ -590,8 +669,8 @@ function buildLayers(
                 }, "scatterplot"),
                 onHover: makeHoverHandler(layerId, "scatterplot"),
                 updateTriggers: {
-                  getFillColor: [lo, hi, scheme],
-                  getRadius: [lo, hi],
+                  getFillColor: [lo, hi, scheme, ...exprTriggers],
+                  getRadius: [lo, hi, ...exprTriggers],
                 },
               }),
             );
@@ -623,6 +702,9 @@ function buildLayers(
             const geoResults = buildWkbGeoArrowResults(config.wkbArrays, attrs);
             for (const gr of geoResults) {
               const geoLayerType = gr.geometryType;
+              const readRow = hasAnyExpression(exprs)
+                ? makeArrowRowReader(gr.table, allExpressionIdentifiers(exprs))
+                : null;
               if (geoLayerType === "point" || geoLayerType === "multipoint") {
                 result.push(
                   new GeoArrowScatterplotLayer({
@@ -632,16 +714,28 @@ function buildLayers(
                     pickable: true,
                     filled: true,
                     stroked: true,
-                    getFillColor: ({ index, data }: any) => {
-                      const v = data.data.getChild("value")?.get(index);
-                      return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 150];
-                    },
-                    getRadius: ({ index, data }: any) => {
-                      const v = data.data.getChild("value")?.get(index);
-                      if (v == null) return 8000;
-                      const range = hi - lo || 1;
-                      return 3000 + ((Number(v) - lo) / range) * 30000;
-                    },
+                    getFillColor:
+                      exprs.fill && readRow
+                        ? ({ index }: any) =>
+                            normalizeExpressionColor(
+                              safeEvalExpression(exprs.fill!, readRow(index)),
+                              ramp,
+                              [100, 150, 255, 150],
+                            )
+                        : ({ index, data }: any) => {
+                            const v = data.data.getChild("value")?.get(index);
+                            return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 150];
+                          },
+                    getRadius:
+                      exprs.radius && readRow
+                        ? ({ index }: any) =>
+                            normalizeExpressionNumber(safeEvalExpression(exprs.radius!, readRow(index))) ?? 8000
+                        : ({ index, data }: any) => {
+                            const v = data.data.getChild("value")?.get(index);
+                            if (v == null) return 8000;
+                            const range = hi - lo || 1;
+                            return 3000 + ((Number(v) - lo) / range) * 30000;
+                          },
                     getLineColor: [255, 255, 255, 40],
                     lineWidthMinPixels: 1,
                     radiusMinPixels: 3,
@@ -651,7 +745,10 @@ function buildLayers(
                       if (info?.object && onFeatureClick) onFeatureClick(info.object, "geojson");
                     }, "geojson"),
                     onHover: makeHoverHandler(layerId, "wkb"),
-                    updateTriggers: { getFillColor: [lo, hi, scheme], getRadius: [lo, hi] },
+                    updateTriggers: {
+                      getFillColor: [lo, hi, scheme, ...exprTriggers],
+                      getRadius: [lo, hi, ...exprTriggers],
+                    },
                   }),
                 );
               } else if (geoLayerType === "linestring" || geoLayerType === "multilinestring") {
@@ -661,10 +758,18 @@ function buildLayers(
                     data: gr.table,
                     getPath: geomData(gr.table, "geometry"),
                     pickable: true,
-                    getColor: ({ index, data }: any) => {
-                      const v = data.data.getChild("value")?.get(index);
-                      return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 200];
-                    },
+                    getColor:
+                      exprs.fill && readRow
+                        ? ({ index }: any) =>
+                            normalizeExpressionColor(
+                              safeEvalExpression(exprs.fill!, readRow(index)),
+                              ramp,
+                              [100, 150, 255, 200],
+                            )
+                        : ({ index, data }: any) => {
+                            const v = data.data.getChild("value")?.get(index);
+                            return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 200];
+                          },
                     getWidth: 2,
                     widthMinPixels: 1,
                     widthMaxPixels: 8,
@@ -673,7 +778,7 @@ function buildLayers(
                       if (info?.object && onFeatureClick) onFeatureClick(info.object, "geojson");
                     }, "geojson"),
                     onHover: makeHoverHandler(layerId, "wkb"),
-                    updateTriggers: { getColor: [lo, hi, scheme] },
+                    updateTriggers: { getColor: [lo, hi, scheme, ...exprTriggers] },
                   }),
                 );
               } else if (geoLayerType === "polygon" || geoLayerType === "multipolygon") {
@@ -688,21 +793,35 @@ function buildLayers(
                     extruded,
                     lineWidthMinPixels: 1,
                     getLineWidth: 2,
-                    getFillColor: ({ index, data }: any) => {
-                      const v = data.data.getChild("value")?.get(index);
-                      return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 120];
-                    },
+                    getFillColor:
+                      exprs.fill && readRow
+                        ? ({ index }: any) =>
+                            normalizeExpressionColor(
+                              safeEvalExpression(exprs.fill!, readRow(index)),
+                              ramp,
+                              [100, 150, 255, 120],
+                            )
+                        : ({ index, data }: any) => {
+                            const v = data.data.getChild("value")?.get(index);
+                            return v != null ? valueToColor(Number(v), lo, hi, scheme) : [100, 150, 255, 120];
+                          },
                     getLineColor: ({ index, data }: any) => {
                       const v = data.data.getChild("value")?.get(index);
                       return v != null ? valueToColor(Number(v), lo, hi, scheme) : [80, 130, 230, 200];
                     },
-                    getElevation: ({ index, data }: any) => {
-                      if (!extruded) return 0;
-                      const v = data.data.getChild("value")?.get(index);
-                      if (v == null) return 0;
-                      const range = hi - lo || 1;
-                      return ((Number(v) - lo) / range) * 500;
-                    },
+                    getElevation:
+                      exprs.elevation && readRow
+                        ? ({ index }: any) =>
+                            extruded
+                              ? (normalizeExpressionNumber(safeEvalExpression(exprs.elevation!, readRow(index))) ?? 0)
+                              : 0
+                        : ({ index, data }: any) => {
+                            if (!extruded) return 0;
+                            const v = data.data.getChild("value")?.get(index);
+                            if (v == null) return 0;
+                            const range = hi - lo || 1;
+                            return ((Number(v) - lo) / range) * 500;
+                          },
                     elevationScale: 50,
                     opacity: layerOpacity,
                     onClick: makeClickHandler((info: any) => {
@@ -710,9 +829,9 @@ function buildLayers(
                     }, "geojson"),
                     onHover: makeHoverHandler(layerId, "wkb"),
                     updateTriggers: {
-                      getFillColor: [lo, hi, scheme],
+                      getFillColor: [lo, hi, scheme, ...exprTriggers],
                       getLineColor: [lo, hi, scheme],
-                      getElevation: [lo, hi, extruded],
+                      getElevation: [lo, hi, extruded, ...exprTriggers],
                     },
                   }),
                 );
@@ -730,21 +849,27 @@ function buildLayers(
                 extruded,
                 lineWidthMinPixels: 1,
                 getLineWidth: 2,
-                getFillColor: (f: any) => {
-                  const v = f.properties?.value;
-                  return v != null ? valueToColor(v, lo, hi, scheme) : [100, 150, 255, 120];
-                },
+                getFillColor: exprs.fill
+                  ? (f: any) =>
+                      normalizeExpressionColor(safeEvalExpression(exprs.fill!, jsRow(f)), ramp, [100, 150, 255, 120])
+                  : (f: any) => {
+                      const v = f.properties?.value;
+                      return v != null ? valueToColor(v, lo, hi, scheme) : [100, 150, 255, 120];
+                    },
                 getLineColor: (f: any) => {
                   const v = f.properties?.value;
                   return v != null ? valueToColor(v, lo, hi, scheme) : [80, 130, 230, 200];
                 },
-                getElevation: (f: any) => {
-                  if (!extruded) return 0;
-                  const v = f.properties?.value;
-                  if (v == null) return 0;
-                  const range = hi - lo || 1;
-                  return ((v - lo) / range) * 500;
-                },
+                getElevation: exprs.elevation
+                  ? (f: any) =>
+                      extruded ? (normalizeExpressionNumber(safeEvalExpression(exprs.elevation!, jsRow(f))) ?? 0) : 0
+                  : (f: any) => {
+                      if (!extruded) return 0;
+                      const v = f.properties?.value;
+                      if (v == null) return 0;
+                      const range = hi - lo || 1;
+                      return ((v - lo) / range) * 500;
+                    },
                 getPointRadius: 100,
                 pointRadiusMinPixels: 3,
                 pointRadiusMaxPixels: 20,
@@ -754,9 +879,9 @@ function buildLayers(
                 },
                 onHover: makeHoverHandler(layerId, "geojson"),
                 updateTriggers: {
-                  getFillColor: [lo, hi, scheme],
+                  getFillColor: [lo, hi, scheme, ...exprTriggers],
                   getLineColor: [lo, hi, scheme],
-                  getElevation: [lo, hi, extruded],
+                  getElevation: [lo, hi, extruded, ...exprTriggers],
                 },
               }),
             );

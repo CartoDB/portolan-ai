@@ -11,6 +11,10 @@ export function buildComponentTips(): string[] {
 
     // GeoMap
     "GeoMap: pass queryId. A SELECT that returns a GEOMETRY column auto-renders as map features. Set basemap='auto'. Reproject to EPSG:4326 for display as described in the DuckDB notes.",
+    "GeoMap conditional styling: fillColorExpression / elevationExpression / radiusExpression take a restricted JS expression over the result columns (EXACT case-sensitive names from describeDataset; no function calls; alias awkward names in SQL). " +
+      "fillColorExpression returning a number ramps through colorScheme; returning [r,g,b] or [r,g,b,a] (0-255) sets explicit colors - ideal for highlight/threshold/category requests, " +
+      'e.g. fillColorExpression="USP_TX_DEN > 50 ? [215,48,39,200] : [5,113,176,160]". ' +
+      "Only reference columns present in the SELECT result. Not available on arc layers.",
 
     // Graph
     "Graph: queryId + xColumn + yColumns + chartType (bar/line/area/pie). " +
