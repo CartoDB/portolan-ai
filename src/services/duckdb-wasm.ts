@@ -166,9 +166,16 @@ export async function registerRemoteJSON(url: string, name: string): Promise<str
 }
 
 /** Convert Arrow values to plain JS - handles BigInt, Uint8Array, Struct, List, nested objects. */
-function arrowToJs(val: unknown): unknown {
+export function arrowToJs(val: unknown): unknown {
   if (val == null) return null;
   if (typeof val === "bigint") return Number(val);
+  // Arrow Decimal / HUGEINT bignum (a Uint32Array subclass, e.g. SUM(BIGINT) widened
+  // to HUGEINT, or DECIMAL(38,0) columns). Its toJSON() emits a QUOTED string like
+  // "19562", so it MUST be converted before the generic toJSON branch below, otherwise
+  // aggregated numeric columns reach the UI as strings and break charts/sorting.
+  if (val && typeof val === "object" && (val as Record<symbol, unknown>)[Symbol.for("isArrowBigNum")]) {
+    return Number(val);
+  }
   if (val instanceof Uint8Array) return `0x${[...val].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
   // Arrow List / Array → plain array (before object check since Arrays are objects)
   if (Array.isArray(val)) return val.map(arrowToJs);
