@@ -1142,6 +1142,23 @@ export default function DeckGLMap({
     });
   }, [latitude, longitude, zoom, extruded]);
 
+  // 5b. Apply pitch/bearing when they change WITHOUT a lat/lng/zoom change
+  // (AI setting extruded=true or pitch alone). The flyTo effect above early-returns
+  // in that case, so without this the camera would stay flat until a remount.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    // A programmatic flyTo/fitBounds in flight already targets resolvedPitch/Bearing
+    if (programmaticMoveRef.current && map.isMoving()) return;
+    // Skip when the camera is already there (e.g. the prop change came FROM a
+    // user gesture that was saved back into the viewport props)
+    if (Math.abs(map.getPitch() - resolvedPitch) < 0.5 && Math.abs(map.getBearing() - resolvedBearing) < 0.5) {
+      return;
+    }
+    programmaticMoveRef.current = true;
+    map.easeTo({ pitch: resolvedPitch, bearing: resolvedBearing, duration: 800 });
+  }, [resolvedPitch, resolvedBearing]);
+
   // 6. FlyTo from external request (e.g. DataTable "Zoom to record")
   const flyToVer = useFlyToVersion();
   useEffect(() => {

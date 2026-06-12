@@ -1,9 +1,9 @@
-import { withTamboInteractable } from "@tambo-ai/react";
+import { useTambo, withTamboInteractable } from "@tambo-ai/react";
 import { ChevronDown, ChevronUp, Eye, EyeOff, Layers, Map as MapIcon } from "lucide-react";
 import * as React from "react";
 import { lazy, Suspense, useMemo } from "react";
 import { z } from "zod";
-import { readStorage, writeStorage } from "@/lib/storage";
+import { readStorage, removeStorage, writeStorage } from "@/lib/storage";
 import { applyTimeFilter, setCrossFilter, useQueryResult, useTimeFilter } from "@/services/query-store";
 import type { Basemap, ColorScheme, LayerConfig, LayerType } from "./geo-map-deckgl";
 import { useInDashboardPanel } from "./panel-context";
@@ -46,6 +46,17 @@ const layerEntrySchema = z.object({
   opacity: z.number().optional().describe("Layer opacity 0-1 (default 0.85)"),
   visible: z.boolean().optional().describe("Whether this layer is visible (default true)"),
 });
+
+/**
+ * User-ownable layer state persisted by the layer control panel.
+ * Order in the array is the user's layer order. AI styling (colorScheme,
+ * columns, layerType) is intentionally NOT stored so it always tracks props.
+ */
+interface LayerOverride {
+  id: string;
+  visible?: boolean;
+  opacity?: number;
+}
 
 export const geoMapSchema = z.object({
   title: z.string().optional().describe("Map title"),
@@ -557,30 +568,45 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     colorMetric,
   ]);
 
-  // Layer control overrides (persisted to localStorage)
+  // Thread scope for localStorage keys. queryIds (qr_N) are session counters that
+  // reset on reload, so without the thread id a new session's unrelated map would
+  // inherit viewport/layer state saved under the same qr_N by an older thread.
+  const { currentThreadId } = useTambo();
+  const threadScope = currentThreadId ?? "";
+
+  // Layer control overrides (persisted to localStorage).
+  // Only user-ownable fields are stored: visibility, opacity, order. Everything
+  // else (colorScheme, columns, layerType) stays live from AI props, so an
+  // update_component_props restyle is never shadowed by a stale snapshot.
   const storageKey = isMultiLayer
-    ? `geomap-layers:${layersProp?.map((l) => l.id).join(",")}`
+    ? `geomap-layers:${threadScope}:${layersProp?.map((l) => l.id).join(",")}`
     : queryId
-      ? `geomap-layers:${queryId}`
+      ? `geomap-layers:${threadScope}:${queryId}`
       : undefined;
 
-  const [layerOverrides, setLayerOverrides] = React.useState<z.infer<typeof layerEntrySchema>[] | null>(() => {
+  const [layerOverrides, setLayerOverrides] = React.useState<LayerOverride[] | null>(() => {
     if (!storageKey) return null;
-    return readStorage<z.infer<typeof layerEntrySchema>[] | null>(storageKey, null);
+    return readStorage<LayerOverride[] | null>(storageKey, null);
   });
 
-  // Effective layers = overrides (if same IDs) or original prop, with single-layer synthesis fallback
+  // Effective layers = live AI layers merged with user overrides (visible/opacity/order)
   const effectiveLayers = useMemo(() => {
     const baseLayers = isMultiLayer ? layersProp : synthesizedLayer ? [synthesizedLayer] : undefined;
     if (!baseLayers) return undefined;
-    if (!layerOverrides) return baseLayers;
-    // Validate override IDs still match base layers (AI may have changed layers)
-    const baseIds = new Set(baseLayers.map((l) => l.id));
-    const overrideIds = new Set(layerOverrides.map((l) => l.id));
-    if (baseIds.size !== overrideIds.size || ![...baseIds].every((id) => overrideIds.has(id))) {
-      return baseLayers; // IDs changed, discard stale overrides
+    if (!layerOverrides?.length) return baseLayers;
+    const byId = new Map(baseLayers.map((l) => [l.id, l]));
+    const merged: z.infer<typeof layerEntrySchema>[] = [];
+    for (const o of layerOverrides) {
+      const base = byId.get(o.id);
+      if (!base) continue; // override for a layer the AI has since removed
+      byId.delete(o.id);
+      merged.push({ ...base, visible: o.visible ?? base.visible, opacity: o.opacity ?? base.opacity });
     }
-    return layerOverrides;
+    // Layers the AI added after the override was saved keep their own settings
+    for (const l of baseLayers) {
+      if (byId.has(l.id)) merged.push(l);
+    }
+    return merged;
   }, [isMultiLayer, layersProp, synthesizedLayer, layerOverrides]);
 
   // Single-layer effective visibility/opacity from layer control overrides
@@ -589,9 +615,11 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
 
   const handleUpdateLayers = React.useCallback(
     (updated: z.infer<typeof layerEntrySchema>[]) => {
-      setLayerOverrides(updated);
+      // Persist only the user-ownable fields, AI styling stays live
+      const slim: LayerOverride[] = updated.map((l) => ({ id: l.id, visible: l.visible, opacity: l.opacity }));
+      setLayerOverrides(slim);
       if (storageKey) {
-        writeStorage(storageKey, updated);
+        writeStorage(storageKey, slim);
       }
     },
     [storageKey],
@@ -599,9 +627,9 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
 
   // Viewport persistence (localStorage) - saves user pan/zoom/tilt across refresh
   const viewportStorageKey = isMultiLayer
-    ? `geomap-viewport:${layersProp?.map((l) => l.id).join(",")}`
+    ? `geomap-viewport:${threadScope}:${layersProp?.map((l) => l.id).join(",")}`
     : queryId
-      ? `geomap-viewport:${queryId}`
+      ? `geomap-viewport:${threadScope}:${queryId}`
       : undefined;
 
   const [savedViewport, setSavedViewport] = React.useState<{
@@ -627,6 +655,27 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     },
     [viewportStorageKey],
   );
+
+  // AI camera updates take precedence over a previously saved user viewport.
+  // Without this, one user gesture would shadow every later AI camera change
+  // (the saved values win the ?? fallback below, so DeckGLMap never sees the
+  // new props and its flyTo effect never fires).
+  const aiCameraRef = React.useRef({ latitude, longitude, zoom, pitch: props.pitch, bearing: props.bearing });
+  React.useEffect(() => {
+    const prev = aiCameraRef.current;
+    const changed =
+      prev.latitude !== latitude ||
+      prev.longitude !== longitude ||
+      prev.zoom !== zoom ||
+      prev.pitch !== props.pitch ||
+      prev.bearing !== props.bearing;
+    if (!changed) return;
+    aiCameraRef.current = { latitude, longitude, zoom, pitch: props.pitch, bearing: props.bearing };
+    setSavedViewport(null);
+    if (viewportStorageKey) {
+      removeStorage(viewportStorageKey);
+    }
+  }, [latitude, longitude, zoom, props.pitch, props.bearing, viewportStorageKey]);
 
   const visibleLayers = useMemo(
     () =>
