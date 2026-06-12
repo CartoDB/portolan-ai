@@ -8,7 +8,9 @@ paths:
 
 ## Installed versions
 
-`@tambo-ai/react` 1.2.8, `@tambo-ai/typescript-sdk` 0.96.3, bundled `@tambo-ai/client` 1.1.3, `@ag-ui/core` 0.0.44. Peer requirements satisfied by our tree: react 19, zod 4.x, `@modelcontextprotocol/sdk` 1.29.0.
+`@tambo-ai/react` 1.2.8, `@tambo-ai/typescript-sdk` 0.96.4 (transitive), bundled `@tambo-ai/client` 1.1.3, `@ag-ui/core` 0.0.44. Peer requirements satisfied by our tree: react 19, zod 4.x, `@modelcontextprotocol/sdk` 1.29.0.
+
+**Known upstream bug (tracked)**: `useTamboSuggestions` fetches suggestions for `ephemeral_<uuid>` reasoning placeholder message ids, producing 3 GET + 3 POST 404s per affected turn (most visible on MCP tool-call flows with extended reasoning). Harmless network noise; suggestions just skip that turn. Upstream issue tambo-ai/tambo#2942, local tracker CartoDB/portolan-ai#1. Re-check on any `@tambo-ai/react` bump past 1.2.8.
 
 ## What's New in v1.2.8 (from v1.2.5)
 
@@ -217,15 +219,19 @@ Tambo's `withTamboInteractable` is one-way (Tambo→Component). User interaction
 
 | State | Storage Key | Debounce | Scope |
 |-------|-------------|----------|-------|
-| Map viewport (zoom/pan/pitch/bearing) | `geomap-viewport:{queryId\|layerIds}` | 300ms (moveend) | Per map |
-| Map layer opacity/visibility/order | `geomap-layers:{layerIds}` | Immediate | Per map |
+| Map viewport (zoom/pan/pitch/bearing) | `geomap-viewport:{threadId}:{queryId\|layerIds}` | 300ms (moveend) | Per map per thread |
+| Map layer visibility/opacity/order (slim `LayerOverride`, never AI styling) | `geomap-layers:{threadId}:{queryId\|layerIds}` | Immediate | Per map per thread |
 | Dashboard panel order | `panel-order-${threadId}` | Immediate | Per thread |
 | Dashboard panel sizes | `panel-layouts-${threadId}` | 500ms | Per thread |
 | Dashboard dismissed panels | `panel-dismissed-${threadId}` | Immediate | Per thread |
 
-**NOT persisted** (intentionally): DataTable pagination, maximized panel state, Graph hover/click.
+Map keys are thread-scoped because queryIds (`qr_N`) are session counters that would otherwise collide across sessions.
+
+**NOT persisted** (intentionally): DataTable pagination, maximized panel state, Graph hover/click, AI layer styling (colorScheme/columns/layerType stay live from props).
 
 **programmaticMoveRef**: In DeckGLMap, a ref flag suppresses viewport saves during AI-driven flyTo, auto-fitBounds, and external flyTo. Only user gestures are saved. Flag is auto-cleared after each `moveend`.
+
+**AI camera precedence**: GeoMap clears the saved viewport (state + localStorage) whenever the AI changes latitude/longitude/zoom/pitch/bearing props, so AI camera updates always apply even after user gestures. DeckGLMap additionally eases pitch/bearing when they change without a lat/lng/zoom change (AI setting `extruded` or `pitch` alone).
 
 ## Streaming State
 
@@ -262,6 +268,16 @@ import { TamboMcpProvider, MCPTransport } from "@tambo-ai/react/mcp";
 **Elicitation responses**: `{ action: "accept"|"decline"|"cancel", content?: Record<string, unknown> }`. Field types: text, number, boolean, enum.
 
 **Transport**: `MCPTransport.HTTP` (default, streamable) or `MCPTransport.SSE` (Server-Sent Events).
+
+## MCP Integration (Server-Side, Tambo Console)
+
+MCP servers defined in console.tambo.co (e.g. our MotherDuck server) run entirely on Tambo's backend. ZERO frontend code: no `mcpServers` prop, no `TamboMcpProvider` needed for them. Verified against the tambo-ai/tambo monorepo source (apps/api + packages/backend):
+
+- Stored per project in a `tool_providers` table: `url`, `serverKey`, transport (HTTP/SSE), custom headers, OAuth. OAuth identity is per-provider (ONE context shared by all end users), not per-user.
+- On every thread advance, the backend connects to all project MCP servers, calls `listTools()` live, and exposes them to the LLM as `{serverKey}__{toolName}` (double-underscore separator, e.g. `motherduck__query`). Tool calls are executed server-side and the results stream back as normal tool messages.
+- MCP sessions persist per thread (`mcp_thread_session` table keyed by threadId + provider), so server state survives across turns in a thread.
+- Connection/listTools failures are written to the project logs in the Tambo console. Check there first when a console MCP tool silently misbehaves.
+- The hosted MotherDuck MCP exposes `query` (with a `database` param); the local stdio flavor exposes `execute_query`. Both speak DuckDB SQL.
 
 ## TamboThread Type
 

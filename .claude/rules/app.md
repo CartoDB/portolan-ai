@@ -20,8 +20,8 @@ Tailwind v4 theme variables (light + dark). Brand colors: portolan-blue, portola
 - `listResources`/`getResource` on TamboProvider exposes active dashboard panels as `panel://` resources for @-mentions
 - `useMcpServers()` passes MCP server config to TamboProvider, `<TamboMcpProvider>` wraps children for MCP hooks
 - `useGeoIP()` provides user location for environment context (date/timezone/location), not for suggestions
-- `MentionChips` above textarea renders `@panel:Component("title")` mentions as colored pills
-- `DashboardCanvas` `onMentionPanel` prop inserts `@panel:` mention into chat via `useTamboThreadInput`
+- `MentionChips` above the textarea renders panel mentions as colored pills, driven by context attachments (`useTamboContextAttachment`), NOT by parsing input text. The textarea stays purely the user's words
+- `DashboardCanvas` `onMentionPanel` prop adds a one-shot panel-snapshot context attachment (componentName, title, queryId, row count, columns, sample rows via `buildPanelSnapshot`). No text token is written. A `panelId → attachmentId` ref map dedupes repeat clicks; the SDK auto-clears attachments after send
 - MobileBottomSheet: swipeable drawer, auto-expand on send, auto-collapse on dashboard render
 - SessionHistory: thread list with auto-names, new thread button
 - `useReplayQueries(messages)` re-runs runSQL tool calls from restored threads

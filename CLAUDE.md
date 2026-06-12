@@ -301,7 +301,7 @@ Packages: `@geoarrow/deck.gl-geoarrow@0.4.1`, `@walkthru-earth/objex-utils@1.5.0
 
 ## @Mention System
 
-Mentions use `@type:id` format in chat input, rendered as colored chip pills above the textarea via `MentionChips` (`src/components/tambo/mention-chips.tsx`).
+Mentions are attachment-driven chips, NOT text tokens. `MentionChips` (`src/components/tambo/mention-chips.tsx`) renders colored pills above the textarea from context-attachment state; the textarea stays purely the user's words.
 
 | Type | Mechanism | Page | References |
 |------|-----------|------|------------|
@@ -324,4 +324,4 @@ Mentions use `@type:id` format in chat input, rendered as colored chip pills abo
 - Geo-IP: `useGeoIP()` fetches from geojs.io, caches 24h in localStorage (null on first render). Returns city, country, lat/lng, timezone. Used for environment context, NOT for suggestions (suggestions are catalog-specific). Falls back gracefully when blocked.
 - Query replay: `useReplayQueries(messages)` re-runs SQL from restored threads to repopulate query-store. Used by both pages.
 - GeoMap height: `h-[420px]` in chat (inline), `h-full` in dashboard panels.
-- Anonymous user key: `useAnonymousUserKey()` (localStorage `walkthru-user-key`), required by the SDK for thread scoping.
+- Anonymous user key: `useAnonymousUserKey()` (localStorage `portolan-user-key`), required by the SDK for thread scoping.

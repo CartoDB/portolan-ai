@@ -960,19 +960,19 @@ graph TB
     subgraph SettingsStore["settings-store.ts"]
         Theme_S["theme: dark | light | system"]
         QL["queryLimit: number<br/>default 10000<br/>presets: 500, 5K, 10K, 50K"]
-        Persist["localStorage: walkthru-settings"]
+        Persist["localStorage: portolan-settings"]
     end
 
     subgraph LocalStorageKeys["All localStorage Keys"]
-        LS1["walkthru-settings → theme + queryLimit"]
-        LS2["walkthru-geoip → cached geo-IP (24h TTL)"]
-        LS3["walkthru-user-key → anon-{uuid}"]
+        LS1["portolan-settings → theme + queryLimit"]
+        LS2["portolan-geoip → cached geo-IP (24h TTL)"]
+        LS3["portolan-user-key → anon-{uuid}"]
         LS4["panel-order-{threadId} → panel sort order"]
         LS5["panel-layouts-{threadId} → grid sizes (500ms debounce)"]
         LS6["panel-dismissed-{threadId} → closed panels"]
-        LS7["geomap-viewport:{id} → zoom/pan/pitch/bearing"]
-        LS8["geomap-layers:{ids} → opacity/visibility/order"]
-        LS9["walkthru-mcp-servers → MCP server configs"]
+        LS7["geomap-viewport:{threadId}:{id} → zoom/pan/pitch/bearing"]
+        LS8["geomap-layers:{threadId}:{ids} → visibility/opacity/order (slim overrides)"]
+        LS9["mcp-servers → MCP server configs"]
     end
 
     subgraph Access["Access Patterns"]
@@ -1066,7 +1066,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Fetch["useGeoIP()"]
-        Cache{"localStorage<br/>walkthru-geoip<br/>< 24h old?"}
+        Cache{"localStorage<br/>portolan-geoip<br/>< 24h old?"}
         Cache -->|Yes| Cached[Return cached]
         Cache -->|No| API["fetch geojs.io/v1/ip/geo.json"]
         API --> H3Compute["h3-js: latLngToCell<br/>at res 1-8"]

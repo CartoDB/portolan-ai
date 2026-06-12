@@ -45,7 +45,6 @@ paths:
 ## `geo/` - CRS helpers
 
 - `geo/crs.ts` → `transform4326Expr(geomExpr, nativeCrs?)`: returns `geomExpr` unchanged for EPSG:4326/undefined, otherwise `ST_Transform(geomExpr, '<nativeCrs>', 'EPSG:4326', always_xy := true)`. Used by `wrapSqlForGeometry` to reproject native-CRS catalog geometry for display only.
-- `style-store.ts` exists but is vestigial, the style editor route was removed.
 
 ## `catalogs/` - Portolan catalog data layer
 

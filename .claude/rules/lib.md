@@ -70,7 +70,7 @@ src/lib/tambo/
 
 ## `settings-store.ts`
 
-Centralized settings store via `useSyncExternalStore` + localStorage (`walkthru-settings`). `Settings` fields: theme (`dark`/`light`/`system`) and queryLimit (default 10000). Exports: `getSettings()`, `updateSettings(partial)`, `useSettings()`, `DEFAULT_QUERY_LIMIT`, `QUERY_LIMIT_PRESETS`. Migrates from old `"theme"` localStorage key.
+Centralized settings store via `useSyncExternalStore` + localStorage (`portolan-settings`). `Settings` fields: theme (`dark`/`light`/`system`) and queryLimit (default 10000). Exports: `getSettings()`, `updateSettings(partial)`, `useSettings()`, `DEFAULT_QUERY_LIMIT`, `QUERY_LIMIT_PRESETS`. Migrates from old `"theme"` localStorage key.
 
 ## `use-theme-effect.ts`
 
@@ -78,7 +78,7 @@ Centralized settings store via `useSyncExternalStore` + localStorage (`walkthru-
 
 ## `use-anonymous-user-key.ts`
 
-Persistent anonymous user key (localStorage `walkthru-user-key`). SDK requires `userKey` for thread scoping.
+Persistent anonymous user key (localStorage `portolan-user-key`). SDK requires `userKey` for thread scoping.
 
 ## `utils.ts`
 
