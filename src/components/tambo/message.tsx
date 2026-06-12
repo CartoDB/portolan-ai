@@ -136,9 +136,10 @@ export function getComponentBlocks(message: TamboThreadMessage): TamboComponentC
 
 /**
  * Props for the Message component.
- * Extends standard HTMLDivElement attributes.
+ * Intentionally narrow: arbitrary props are NOT forwarded to the DOM
+ * (hidden _tambo_* props must never reach DOM elements).
  */
-export interface MessageProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "content"> {
+export interface MessageProps {
   /** The role of the message sender ('user' or 'assistant'). */
   role: "user" | "assistant";
   /** The full Tambo thread message object. */
@@ -147,6 +148,8 @@ export interface MessageProps extends Omit<React.HTMLAttributes<HTMLDivElement>,
   variant?: VariantProps<typeof messageVariants>["variant"];
   /** Optional flag to indicate if the message is in a loading state. */
   isLoading?: boolean;
+  /** Optional CSS classes for the root container. */
+  className?: string;
   /** The child elements to render within the root container. Typically includes Message.Bubble and Message.RenderedComponentArea. */
   children: React.ReactNode;
 }
@@ -164,7 +167,7 @@ export interface MessageProps extends Omit<React.HTMLAttributes<HTMLDivElement>,
  * ```
  */
 const Message = React.forwardRef<HTMLDivElement, MessageProps>(
-  ({ children, className, role, variant, isLoading, message, ...props }, ref) => {
+  ({ children, className, role, variant, isLoading, message }, ref) => {
     const { thread } = useTambo();
     const lastRunCancelled = thread?.thread.lastRunCancelled ?? false;
 
@@ -180,7 +183,6 @@ const Message = React.forwardRef<HTMLDivElement, MessageProps>(
           className={cn(messageVariants({ variant }), className)}
           data-message-role={role}
           data-message-id={message.id}
-          {...props}
         >
           {children}
         </div>
@@ -362,12 +364,12 @@ function ToolcallStatusIcon({
   isLoading: boolean | undefined;
 }) {
   if (hasToolError) {
-    return <X className="w-3 h-3 text-bold text-red-500" />;
+    return <X className="w-3 h-3 text-bold text-destructive" />;
   }
   if (isLoading) {
     return <Loader2 className="w-3 h-3 text-muted-foreground text-bold animate-spin" />;
   }
-  return <Check className="w-3 h-3 text-bold text-green-500" />;
+  return <Check className="w-3 h-3 text-bold text-success" />;
 }
 
 /**
