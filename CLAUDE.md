@@ -222,7 +222,7 @@ export const InteractableMyComponent = withTamboInteractable(MyComponent, {
 
 | Component | AI Can Update | Data Source | Cross-Filter |
 |-----------|--------------|-------------|--------------|
-| **GeoMap** | latitude, longitude, zoom, pitch, bearing, colorScheme, extruded, layerType, layers[] | queryId → useQueryResult | Emits: feature click, bbox. Consumes: bbox, time filter |
+| **GeoMap** | latitude, longitude, zoom, pitch, bearing, colorScheme, extruded, layerType, layers[], fillColorExpression, elevationExpression, radiusExpression | queryId → useQueryResult | Emits: feature click, bbox. Consumes: bbox, time filter |
 | **Graph** | chartType, xColumn, yColumns, xLabel, yLabel | queryId → useQueryResult | Emits: bar click. Consumes: bbox (filters rows), time filter (reference line) |
 | **DataTable** | visibleColumns, title | queryId → useQueryResult | Emits: row click. Consumes: bbox |
 | **TimeSlider** | queryId, timestampColumn, title, autoplay, intervalMs, timezone | queryId → useQueryResult | Emits: time filter (timestamp index). Cross-filters GeoMap + Graph |
@@ -242,6 +242,8 @@ StatsCard, StatsGrid, InsightCard, DatasetCard, QueryDisplay, DataCard. AI provi
 ### Multi-Layer GeoMap
 
 `layers` array prop (max 5). Each layer: `{ id, queryId, layerType, valueColumn, ..., colorScheme, opacity, visible }`. Floating layer control panel (top-left) shown when any layers exist, for toggle/opacity/reorder. Layer-control state persists to localStorage (`geomap-layers:{threadId}:{queryId|layerIds}`) as slim `LayerOverride` entries (`{ id, visible, opacity }` + order) merged field-wise onto the live AI layers, so AI restyling (colorScheme, columns, layerType) is never shadowed by a user toggle. Single-layer maps synthesize a `LayerEntry` from direct props. Map viewport persisted to localStorage (`geomap-viewport:{threadId}:{queryId|layerIds}`), only user gestures saved, AI flyTo/fitBounds suppressed via `programmaticMoveRef`. Keys are thread-scoped because queryIds (`qr_N`) are session counters that would otherwise collide across sessions. **AI camera precedence**: when AI updates latitude/longitude/zoom/pitch/bearing props, the saved user viewport is cleared so the update applies (otherwise one user gesture would shadow AI camera changes forever). DeckGLMap also eases pitch/bearing when they change without a lat/lng/zoom change (AI setting `extruded` or `pitch` alone), so 3D mode applies live instead of waiting for a remount. Uses 5 fixed `useQueryResult` hook slots (React hooks can't be called conditionally).
+
+**Style expressions**: `fillColorExpression` / `elevationExpression` / `radiusExpression` (top-level and per-layer) are restricted JS expressions over result columns, compiled by `src/services/geo/style-expressions.ts` via `_parseExpressionString` from `@deck.gl/json` (jsep AST eval, function calls blocked). Numbers ramp through colorScheme (legend follows the expression's percentile range), `[r,g,b,a]` arrays are explicit colors (gradient legend hidden). GeoArrow layers evaluate expressions per feature through `makeArrowRowReader` (reads only the referenced Arrow columns, zero-copy pipeline untouched). Bad expressions degrade to valueColumn styling, never a blank map. Arc layers unsupported.
 
 ### Adding a New Bidirectional Component (checklist)
 
