@@ -389,9 +389,11 @@ function extractHoverProps(info: any, layerType: LayerType): Record<string, unkn
   return Object.keys(result).length > 0 ? result : null;
 }
 
-// Single-instance: module-level state shared across all DeckGLMap instances
-let lastHoverLayerId: string | null = null;
-let lastHoverIndex: number | null = null;
+// Per-instance hover dedup state, owned by each DeckGLMap (mutable object held in a ref)
+interface HoverDedupState {
+  lastLayerId: string | null;
+  lastIndex: number | null;
+}
 
 function buildLayers(
   configs: LayerConfig[],
@@ -399,6 +401,7 @@ function buildLayers(
   maxVal: number,
   colorScheme: ColorScheme,
   extruded: boolean,
+  hoverState: HoverDedupState,
   onFeatureClick?: (feature: any, layerType: LayerType) => void,
   onHover?: (info: HoverInfo | null) => void,
   isTouch?: boolean,
@@ -420,9 +423,9 @@ function buildLayers(
       if (!onHover) return;
       const idx = info?.index ?? null;
       // Skip if hovering the same feature on the same layer
-      if (idx === lastHoverIndex && layerId === lastHoverLayerId) return;
-      lastHoverIndex = idx;
-      lastHoverLayerId = layerId;
+      if (idx === hoverState.lastIndex && layerId === hoverState.lastLayerId) return;
+      hoverState.lastIndex = idx;
+      hoverState.lastLayerId = layerId;
       const props = info?.object ? extractHoverProps(info, lt) : null;
       onHover(props ? { x: info.x, y: info.y, object: props, layerType: lt } : null);
     };
@@ -960,8 +963,22 @@ export default function DeckGLMap({
     [],
   );
 
+  // Hover dedup state owned by this map instance (mutated by layer hover handlers)
+  const hoverDedupRef = useRef<HoverDedupState>({ lastLayerId: null, lastIndex: null });
+
   const layers = useMemo(
-    () => buildLayers(layerConfigs, minVal, maxVal, colorScheme, extruded, stableOnFeatureClick, handleHover, isTouch),
+    () =>
+      buildLayers(
+        layerConfigs,
+        minVal,
+        maxVal,
+        colorScheme,
+        extruded,
+        hoverDedupRef.current,
+        stableOnFeatureClick,
+        handleHover,
+        isTouch,
+      ),
     [layerConfigs, minVal, maxVal, colorScheme, extruded, stableOnFeatureClick, handleHover, isTouch],
   );
 
