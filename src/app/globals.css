@@ -27,6 +27,9 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -78,9 +81,9 @@
   --container: hsl(60 10% 98%);
   --backdrop: hsl(0 0% 7% / 0.15);
   --muted-backdrop: hsl(0 0% 7% / 0.08);
-  --color-success: hsl(152 69% 31%);
-  --color-warning: hsl(37 91% 40%);
-  --color-info: hsl(204 80% 40%);
+  --success: hsl(152 69% 31%);
+  --warning: hsl(37 91% 40%);
+  --info: hsl(204 80% 40%);
   --destructive-foreground: hsl(0 0% 98%);
   --radius: 0.5rem;
   --panel-left-width: 500px;
@@ -115,9 +118,9 @@
   --container: hsl(0 0% 10%);
   --backdrop: hsl(0 0% 0% / 0.6);
   --muted-backdrop: hsl(0 0% 0% / 0.3);
-  --color-success: hsl(158 64% 52%);
-  --color-warning: hsl(37 91% 55%);
-  --color-info: hsl(199 89% 60%);
+  --success: hsl(158 64% 52%);
+  --warning: hsl(37 91% 55%);
+  --info: hsl(199 89% 60%);
   --destructive-foreground: hsl(60 10% 98%);
 }
 

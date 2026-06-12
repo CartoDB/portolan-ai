@@ -76,7 +76,7 @@ const CodeHeader = ({ language, code }: { language?: string; code?: string }) =>
         className="p-1 rounded-md hover:bg-backdrop transition-colors cursor-pointer"
         title="Copy code"
       >
-        {copied ? <Check className="size-4 text-green-500" /> : <Copy className="size-4" />}
+        {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
       </button>
     </div>
   );

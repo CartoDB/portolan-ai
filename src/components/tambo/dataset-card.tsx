@@ -25,11 +25,11 @@ export const datasetCardSchema = z.object({
 type DatasetCardProps = z.infer<typeof datasetCardSchema>;
 
 const CATEGORY_STYLES: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
-  weather: { icon: Cloud, color: "bg-blue-500/10 text-blue-600 border-blue-500/20" },
-  terrain: { icon: Mountain, color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" },
-  building: { icon: Building2, color: "bg-orange-500/10 text-orange-600 border-orange-500/20" },
-  population: { icon: Users, color: "bg-purple-500/10 text-purple-600 border-purple-500/20" },
-  "cross-index": { icon: Database, color: "bg-cyan-500/10 text-cyan-600 border-cyan-500/20" },
+  weather: { icon: Cloud, color: "bg-info/10 text-info border-info/20" },
+  terrain: { icon: Mountain, color: "bg-portolan-green/10 text-portolan-green border-portolan-green/20" },
+  building: { icon: Building2, color: "bg-warning/10 text-warning border-warning/20" },
+  population: { icon: Users, color: "bg-chart-5/10 text-chart-5 border-chart-5/20" },
+  "cross-index": { icon: Database, color: "bg-portolan-cyan/10 text-portolan-cyan border-portolan-cyan/20" },
 };
 
 export const DatasetCard = React.forwardRef<HTMLDivElement, DatasetCardProps>(

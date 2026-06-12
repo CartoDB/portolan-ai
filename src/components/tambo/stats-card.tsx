@@ -47,13 +47,13 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 const COLOR_CLASSES: Record<string, string> = {
-  blue: "from-blue-500/10 to-blue-600/5 border-blue-500/20",
-  green: "from-emerald-500/10 to-emerald-600/5 border-emerald-500/20",
-  orange: "from-orange-500/10 to-orange-600/5 border-orange-500/20",
-  red: "from-red-500/10 to-red-600/5 border-red-500/20",
-  purple: "from-purple-500/10 to-purple-600/5 border-purple-500/20",
-  cyan: "from-cyan-500/10 to-cyan-600/5 border-cyan-500/20",
-  amber: "from-amber-500/10 to-amber-600/5 border-amber-500/20",
+  blue: "from-portolan-blue/10 to-portolan-blue/5 border-portolan-blue/20",
+  green: "from-success/10 to-success/5 border-success/20",
+  orange: "from-secondary/10 to-secondary/5 border-secondary/20",
+  red: "from-destructive/10 to-destructive/5 border-destructive/20",
+  purple: "from-chart-5/10 to-chart-5/5 border-chart-5/20",
+  cyan: "from-portolan-cyan/10 to-portolan-cyan/5 border-portolan-cyan/20",
+  amber: "from-warning/10 to-warning/5 border-warning/20",
 };
 
 export const StatsCard = React.forwardRef<HTMLDivElement, StatsCardProps>(
@@ -64,7 +64,7 @@ export const StatsCard = React.forwardRef<HTMLDivElement, StatsCardProps>(
 
     const trendIcon = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
     const trendColor =
-      trend === "up" ? "text-emerald-500" : trend === "down" ? "text-red-500" : "text-muted-foreground";
+      trend === "up" ? "text-success" : trend === "down" ? "text-destructive" : "text-muted-foreground";
 
     return (
       <div
