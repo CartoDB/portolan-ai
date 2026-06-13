@@ -10,6 +10,7 @@
  * - Robust Arrow → JS conversion (BigInt, Struct, List)
  */
 
+import type { Table as ArrowTable } from "apache-arrow";
 import { transform4326Expr } from "./geo";
 import { storeQueryResult } from "./query-store";
 import { touchLru } from "./registered-tables";
@@ -26,11 +27,14 @@ let registeredOrder: string[] = [];
 /**
  * Register a computed Arrow result back into DuckDB-WASM as a persistent table
  * named after its queryId, so a follow-up `SELECT * FROM qr_5` reads cached rows
- * with zero recompute. Best-effort: any failure leaves the queryId simply not
- * reusable that turn and never breaks the user-facing result.
+ * with zero recompute. Takes the live Arrow Table returned by `conn.query` and
+ * hands it to `insertArrowTable`, which uses DuckDB-WASM's own bundled apache-arrow
+ * to serialize, so there is no cross-version IPC mismatch (the result Table is
+ * produced by that same bundled arrow). Best-effort: any failure leaves the queryId
+ * simply not reusable that turn and never breaks the user-facing result.
  */
-export async function registerResultTable(id: string, arrowIPC?: Uint8Array): Promise<void> {
-  if (!id || !arrowIPC) return;
+export async function registerResultTable(id: string, table?: ArrowTable): Promise<void> {
+  if (!id || !table) return;
   try {
     const instance = await initDuckDB();
     const conn = await instance.connect();
@@ -41,7 +45,7 @@ export async function registerResultTable(id: string, arrowIPC?: Uint8Array): Pr
         await conn.query(`DROP TABLE IF EXISTS "${old}"`);
       }
       await conn.query(`DROP TABLE IF EXISTS "${id}"`);
-      await conn.insertArrowFromIPCStream(arrowIPC, { name: id, create: true });
+      await conn.insertArrowTable(table, { name: id, create: true });
     } finally {
       await conn.close();
     }
@@ -395,7 +399,7 @@ export async function queryRows(sql: string): Promise<Record<string, unknown>[]>
  *
  * On init failure, retries DuckDB initialization automatically.
  */
-export async function runQuery(input: { sql: string; nativeCrs?: string } | string): Promise<{
+export async function runQuery(input: { sql: string; nativeCrs?: string; registerAs?: string } | string): Promise<{
   queryId: string;
   columns: string[];
   rowCount: number;
@@ -405,6 +409,9 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
 }> {
   const rawSql = typeof input === "string" ? input : input.sql;
   const nativeCrs = typeof input === "string" ? undefined : input.nativeCrs;
+  // On thread replay, register the re-run result under the ORIGINAL queryId that
+  // restored components reference, not the throwaway fresh id of this re-run.
+  const registerAs = typeof input === "string" ? undefined : input.registerAs;
   const sql = cleanSql(rawSql);
 
   if (!sql) {
@@ -513,8 +520,9 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
       geometryColumn: geomColumn ?? undefined,
     });
 
-    // Make this result reusable as a DuckDB table named after its queryId.
-    await registerResultTable(queryId, arrowIPC);
+    // Make this result reusable as a DuckDB table named after its queryId (or the
+    // original id on replay), so a follow-up `SELECT * FROM qr_N` reads cached rows.
+    await registerResultTable(registerAs ?? queryId, result);
 
     // Return only metadata + 3 sample rows to the LLM (saves tokens!)
     // When geometry was auto-detected, tell the AI so it doesn't try to reference
@@ -623,8 +631,8 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
               geometryColumn: geomCols[0],
             });
 
-            // WKB fallback path serializes no Arrow IPC, so this is a no-op skip.
-            await registerResultTable(queryId, undefined);
+            // Make this result reusable as a DuckDB table named after its queryId.
+            await registerResultTable(registerAs ?? queryId, result);
 
             return {
               queryId,
@@ -635,7 +643,8 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
               geometryNote:
                 `Geometry column "${geomCols[0]}" was converted to WKB for rendering. ` +
                 `Use SELECT * for follow-up queries - lat/lng are synthetic. ` +
-                `This result is NOT registered as a reusable table, so do not query FROM ${queryId}, re-query the original file instead.`,
+                `To refine this result without recomputing, query the queryId as a table, e.g. SELECT * FROM ${queryId}. ` +
+                `Its geometry is the "${geomCols[0]}_wkb" column (re-render with ST_GeomFromWKB("${geomCols[0]}_wkb") AS geom).`,
             };
           }
         }

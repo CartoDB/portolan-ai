@@ -1,0 +1,48 @@
+- generic [ref=e2]:
+  - generic [ref=e3]: Loading Finland datasets...
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - link "Portolan Portolan" [ref=e7] [cursor=pointer]:
+          - /url: https://portolan-sdi.org
+          - img "Portolan" [ref=e8]
+          - heading "Portolan" [level=1] [ref=e11]
+          - img [ref=e12]
+        - button "Settings" [ref=e15]:
+          - img [ref=e16]
+        - button "Sessions" [ref=e19]:
+          - img [ref=e20]
+      - generic [ref=e25]:
+        - button "Where people live" [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]: Where people live
+          - img [ref=e28]
+        - button "Holiday cottages" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Holiday cottages
+          - img [ref=e32]
+        - button "Access to services" [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]: Access to services
+          - img [ref=e36]
+        - button "Socio-economic areas" [ref=e38] [cursor=pointer]:
+          - generic [ref=e39]: Socio-economic areas
+          - img [ref=e40]
+        - button "Wellbeing-county reform" [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: Wellbeing-county reform
+          - img [ref=e44]
+      - generic [ref=e49]:
+        - textbox "Chat Message Input" [ref=e50]:
+          - /placeholder: Ask about weather, terrain, buildings, population...
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - button "Attach Images" [ref=e53]:
+              - img [ref=e54]
+            - button "Open MCP Configuration" [ref=e56]:
+              - img [ref=e57]
+          - button "Send message" [ref=e61] [cursor=pointer]:
+            - img [ref=e62]
+      - button [ref=e64]:
+        - img [ref=e65]
+    - generic [ref=e68]:
+      - img "Portolan" [ref=e69]
+      - heading "Portolan world's data" [level=1] [ref=e70]:
+        - text: Portolan
+        - text: world's data

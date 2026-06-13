@@ -1,0 +1,2 @@
+[     803ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/portolan-ai/node_modules/.vite/deps/react-dom_client.js?v=ee70a51b:20102
+[    4839ms] [LOG] [DuckDB] Extensions loaded: avro, core_functions, httpfs, iceberg, parquet, spatial @ http://localhost:5174/portolan-ai/src/services/duckdb-wasm.ts:92

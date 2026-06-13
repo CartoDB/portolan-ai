@@ -1,7 +1,7 @@
 import { type TamboThreadMessage, useTambo } from "@tambo-ai/react";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
-import { registerResultTable, runQuery } from "@/services/duckdb-wasm";
+import { runQuery } from "@/services/duckdb-wasm";
 import { getQueryResult, storeQueryResultWithId } from "@/services/query-store";
 
 /**
@@ -295,14 +295,13 @@ export function useReplayQueries(messages: TamboThreadMessage[]) {
           replayedRef.current.add(originalQueryId);
 
           // Re-run SQL in background, store under the original queryId
-          runQuery({ sql })
+          // registerAs re-registers the re-run result as a DuckDB table under the
+          // ORIGINAL queryId that restored components reference, so `FROM qr_N` works.
+          runQuery({ sql, registerAs: originalQueryId })
             .then((result) => {
               if (result.queryId) {
                 const stored = getQueryResult(result.queryId);
-                if (stored) {
-                  storeQueryResultWithId(originalQueryId, stored);
-                  void registerResultTable(originalQueryId, stored.arrowIPC);
-                }
+                if (stored) storeQueryResultWithId(originalQueryId, stored);
               }
             })
             .catch(() => {
