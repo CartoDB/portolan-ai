@@ -4,7 +4,7 @@ import * as React from "react";
 import { lazy, Suspense, useMemo } from "react";
 import { z } from "zod";
 import { readStorage, removeStorage, writeStorage } from "@/lib/storage";
-import { evaluateExpressionStats } from "@/services/geo/style-expressions";
+import { computePercentileRange, resolveColorEncoding } from "@/services/geo/color-encoding";
 import { applyTimeFilter, setCrossFilter, useQueryResult, useTimeFilter } from "@/services/query-store";
 import type { Basemap, ColorScheme, LayerConfig, LayerType } from "./geo-map-deckgl";
 import { useInDashboardPanel } from "./panel-context";
@@ -188,15 +188,6 @@ const DeckGLMap = lazy(() => import("./geo-map-deckgl"));
 
 const MAX_LAYERS = 5;
 
-function computePercentileRange(values: number[]): { min: number; max: number } {
-  if (values.length === 0) return { min: 0, max: 1 };
-  const sorted = [...values].sort((a, b) => a - b);
-  const lo = sorted[Math.floor(sorted.length * 0.05)];
-  const hi = sorted[Math.floor(sorted.length * 0.95)];
-  if (lo === hi) return { min: lo, max: lo + 1 };
-  return { min: lo, max: hi };
-}
-
 /**
  * Auto-detect layer type from query result column names.
  * Priority order (fastest → slowest rendering):
@@ -316,6 +307,7 @@ function transformQueryToLayer(
     destLatColumn: string;
     destLngColumn: string;
     colorScheme?: ColorScheme;
+    colorMetric?: string;
     opacity?: number;
     fillColorExpression?: string;
     elevationExpression?: string;
@@ -330,16 +322,15 @@ function transformQueryToLayer(
     return { layerConfig: null, type: opts.layerType ?? "h3", values: [], featureCount: 0 };
   }
 
-  // Fill expression legend/ramp domain: numeric expressions drive min/max,
-  // explicit-color expressions have no scalar domain (gradient legend hidden).
-  const exprStats = opts.fillColorExpression ? evaluateExpressionStats(rows, opts.fillColorExpression) : null;
-  const legendValues = (vals: number[]) => {
-    if (!exprStats) return vals;
-    if (exprStats.kind === "number") return exprStats.values;
-    if (exprStats.kind === "color") return [];
-    // invalid expression: degrade to the data's own valueColumn domain, not 0-1.
-    return vals;
-  };
+  // Single source of truth for fill color + legend (geo-map-deckgl reads scheme +
+  // domain from this, the legend reads its legend field). Computed once per layer.
+  const colorResolution = resolveColorEncoding(rows, {
+    colorScheme: opts.colorScheme ?? "blue-red",
+    valueColumn: opts.valueColumn,
+    fillColorExpression: opts.fillColorExpression,
+    colorMetric: opts.colorMetric,
+  });
+  const [domainMin, domainMax] = colorResolution.domain;
 
   // Priority 2: WKB binary → GeoArrow zero-copy rendering (no JSON parse, no JS objects)
   // Auto-detected GEOMETRY/WKB columns are extracted as Uint8Array[] by runQuery().
@@ -357,21 +348,20 @@ function transformQueryToLayer(
       const val = row[opts.valueColumn];
       if (val != null) vals.push(toNum(val));
     }
-    const effectiveVals = legendValues(vals);
-    const { min, max } = computePercentileRange(effectiveVals);
     return {
       layerConfig: {
         id: opts.id,
         type: "wkb" as LayerType,
         data: [], // WKB path uses wkbArrays, not JS data array
         wkbArrays: opts.wkbArrays,
-        colorScheme: opts.colorScheme,
+        colorScheme: colorResolution.scheme,
+        colorResolution,
         opacity: opts.opacity,
         fillColorExpression: opts.fillColorExpression,
         elevationExpression: opts.elevationExpression,
         radiusExpression: opts.radiusExpression,
-        minVal: min,
-        maxVal: max,
+        minVal: domainMin,
+        maxVal: domainMax,
         columnArrays: opts.columnArrays,
         arrowIPC: opts.arrowIPC,
         columnMapping: {
@@ -387,7 +377,7 @@ function transformQueryToLayer(
         },
       },
       type: "wkb",
-      values: effectiveVals,
+      values: vals,
       featureCount: opts.wkbArrays.length,
     };
   }
@@ -507,9 +497,6 @@ function transformQueryToLayer(
     }
   }
 
-  const effectiveVals = legendValues(vals);
-  const { min, max } = computePercentileRange(effectiveVals);
-
   return {
     layerConfig:
       data.length > 0
@@ -517,13 +504,14 @@ function transformQueryToLayer(
             id: opts.id,
             type,
             data,
-            colorScheme: opts.colorScheme,
+            colorScheme: colorResolution.scheme,
+            colorResolution,
             opacity: opts.opacity,
             fillColorExpression: opts.fillColorExpression,
             elevationExpression: opts.elevationExpression,
             radiusExpression: opts.radiusExpression,
-            minVal: min,
-            maxVal: max,
+            minVal: domainMin,
+            maxVal: domainMax,
             columnArrays: opts.columnArrays,
             arrowIPC: opts.arrowIPC,
             columnMapping: {
@@ -541,7 +529,7 @@ function transformQueryToLayer(
           }
         : null,
     type,
-    values: effectiveVals,
+    values: vals,
     featureCount: data.length,
   };
 }
@@ -803,6 +791,7 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
             destLatColumn: layer.destLatColumn ?? "dest_lat",
             destLngColumn: layer.destLngColumn ?? "dest_lng",
             colorScheme: (layer.colorScheme as ColorScheme) ?? colorScheme,
+            colorMetric: layer.colorMetric,
             opacity: layer.opacity,
             fillColorExpression: layer.fillColorExpression,
             elevationExpression: layer.elevationExpression,
@@ -852,6 +841,8 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
             sourceLngColumn,
             destLatColumn,
             destLngColumn,
+            colorScheme,
+            colorMetric: colorMetric ?? undefined,
             columnArrays: qr.columnArrays,
             arrowIPC: qr.arrowIPC,
             wkbArrays: qr.wkbArrays,
@@ -920,6 +911,7 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     singleLayerVisible,
     singleLayerOpacity,
     qr0,
+    colorMetric,
   ]);
 
   // Precompute H3 centroids once when data loads - used for both bounds and bbox cross-filter
