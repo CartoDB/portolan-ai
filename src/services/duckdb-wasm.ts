@@ -12,11 +12,43 @@
 
 import { transform4326Expr } from "./geo";
 import { storeQueryResult } from "./query-store";
+import { touchLru } from "./registered-tables";
 
 let db: any = null;
 let initPromise: Promise<any> | null = null;
 let _initAttempts = 0;
 const MAX_INIT_RETRIES = 3;
+
+/** Cap on how many queryId tables we keep materialized in WASM memory (matches the store's specific-id cap of 40; the auto-id store cap is 20). */
+const REGISTERED_TABLE_CAP = 40;
+let registeredOrder: string[] = [];
+
+/**
+ * Register a computed Arrow result back into DuckDB-WASM as a persistent table
+ * named after its queryId, so a follow-up `SELECT * FROM qr_5` reads cached rows
+ * with zero recompute. Best-effort: any failure leaves the queryId simply not
+ * reusable that turn and never breaks the user-facing result.
+ */
+export async function registerResultTable(id: string, arrowIPC?: Uint8Array): Promise<void> {
+  if (!id || !arrowIPC) return;
+  try {
+    const instance = await initDuckDB();
+    const conn = await instance.connect();
+    try {
+      const { next, evict } = touchLru(registeredOrder, id, REGISTERED_TABLE_CAP);
+      registeredOrder = next;
+      for (const old of evict) {
+        await conn.query(`DROP TABLE IF EXISTS "${old}"`);
+      }
+      await conn.query(`DROP TABLE IF EXISTS "${id}"`);
+      await conn.insertArrowFromIPCStream(arrowIPC, { name: id, create: true });
+    } finally {
+      await conn.close();
+    }
+  } catch {
+    /* registration is best-effort, never surface to the user */
+  }
+}
 
 /** Initialize DuckDB-WASM singleton with retry on chunk load failure. */
 async function initDuckDB(): Promise<any> {
@@ -481,16 +513,20 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
       geometryColumn: geomColumn ?? undefined,
     });
 
+    // Make this result reusable as a DuckDB table named after its queryId.
+    await registerResultTable(queryId, arrowIPC);
+
     // Return only metadata + 3 sample rows to the LLM (saves tokens!)
     // When geometry was auto-detected, tell the AI so it doesn't try to reference
     // synthetic lat/lng columns in follow-up SQL - they only exist in the wrapped result.
     const geometryNote = geomColumn
-      ? `CRITICAL: "lat" and "lng" columns were AUTO-GENERATED from geometry column "${geomColumn}" (${isNativeGeometry ? "GEOMETRY" : "WKB BLOB"}). ` +
-        `They do NOT exist in the raw Parquet file. NEVER SELECT lat/lng directly - they will cause "column not found" errors. ` +
-        `For follow-up queries: (1) Use SELECT * - the system re-generates lat/lng automatically. ` +
-        `(2) To pick specific columns: SELECT * EXCLUDE (unwanted_col1, unwanted_col2) FROM file. ` +
-        `(3) To add computed columns: SELECT *, my_expr AS alias FROM (SELECT * FROM file LIMIT 500). ` +
-        `(4) For direct geometry access: ST_Y(ST_GeomFromWKB("${geomColumn}")) for lat, ST_X(ST_GeomFromWKB("${geomColumn}")) for lng.`
+      ? `"lat" and "lng" were AUTO-GENERATED from geometry column "${geomColumn}" (${isNativeGeometry ? "GEOMETRY" : "WKB BLOB"}). ` +
+        `They do NOT exist in the raw Parquet file, so do not SELECT lat/lng when querying the file directly. ` +
+        `To refine this result, query the returned queryId AS A TABLE, for example SELECT * FROM ${queryId} or ` +
+        `SELECT nearest_type, count(*) FROM ${queryId} GROUP BY ALL. That table already has real lat, lng and ` +
+        `__geo_wkb columns, so re-sorting, re-aggregating and summarizing need no recompute. ` +
+        `To re-render geometry from it, use ST_GeomFromWKB(__geo_wkb) AS geom. ` +
+        `When you instead go back to the raw file, use SELECT * so geometry re-detects and lat/lng regenerate.`
       : undefined;
 
     return {
@@ -587,6 +623,9 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
               geometryColumn: geomCols[0],
             });
 
+            // WKB fallback path serializes no Arrow IPC, so this is a no-op skip.
+            await registerResultTable(queryId, undefined);
+
             return {
               queryId,
               columns: publicCols,
@@ -595,7 +634,8 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
               sampleRows: publicRows.slice(0, 3),
               geometryNote:
                 `Geometry column "${geomCols[0]}" was converted to WKB for rendering. ` +
-                `Use SELECT * for follow-up queries - lat/lng are synthetic.`,
+                `Use SELECT * for follow-up queries - lat/lng are synthetic. ` +
+                `This result is NOT registered as a reusable table, so do not query FROM ${queryId}, re-query the original file instead.`,
             };
           }
         }

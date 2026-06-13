@@ -11,16 +11,18 @@ export const runSQLTool: TamboTool = {
   name: "runSQL",
   description:
     "Execute DuckDB SQL (v1.5 WASM) against remote Parquet files, GeoJSON, or WFS endpoints. " +
-    "Returns queryId for GeoMap/Graph/DataTable components (zero token cost). " +
-    "See DuckDB notes for queryId rules, syntax, and query patterns.",
+    "Returns a queryId for GeoMap/Graph/DataTable components (zero token cost). " +
+    "A prior queryId is also a real table: write FROM qr_5 to re-sort, re-aggregate or summarize a result instead of recomputing it. " +
+    "See DuckDB notes for queryId reuse, distance-from-area, syntax, and query patterns.",
   tool: runQuery,
   inputSchema: z.object({
     sql: z
       .string()
       .describe(
-        "DuckDB SQL. HTTPS URLs in FROM. Use LIMIT from queryLimit in context. ONE statement. " +
-          "H3 maps: h3_h3_to_string(h3_index) AS hex, <metric> AS value. " +
+        "DuckDB SQL. HTTPS URLs in FROM. Reuse a prior result with FROM <queryId> (e.g. FROM qr_5). " +
+          "Use LIMIT from queryLimit in context. ONE statement. " +
           "Geometry: SELECT * (auto-detected, lat/lng auto-generated). " +
+          "Distance from a polygon dataset: measure from ST_PointOnSurface(geom), not the polygon. " +
           "See DuckDB notes for full rules.",
       ),
   }),
