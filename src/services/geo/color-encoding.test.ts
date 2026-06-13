@@ -70,10 +70,11 @@ describe("schemeToCssGradient", () => {
 
   it("viridis legend matches the true viridis fill stops (regression: legend used a divergent hardcoded table)", () => {
     const css = schemeToCssGradient("viridis");
-    // These are the real viridis mid-stops the fill paints. The old hardcoded
-    // LEGEND_GRADIENTS used #31688e / #35b779 instead, so the bar disagreed with the map.
-    expect(css).toContain("rgb(59, 82, 139)");
-    expect(css).toContain("rgb(33, 145, 140)");
-    expect(css).toContain("rgb(94, 201, 98)");
+    // Accurate matplotlib viridis mid-stops the fill paints, sampled from the
+    // deck.gl-raster colormaps.png sprite. The old coarse table approximated
+    // these badly, so the legend bar disagreed with the map.
+    expect(css).toContain("rgb(56, 86, 139)");
+    expect(css).toContain("rgb(35, 136, 141)");
+    expect(css).toContain("rgb(83, 197, 103)");
   });
 });

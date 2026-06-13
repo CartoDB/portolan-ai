@@ -11,7 +11,18 @@ import { useInDashboardPanel } from "./panel-context";
 
 /* ── Schema ────────────────────────────────────────────────────────── */
 
-const COLOR_SCHEMES = ["blue-red", "viridis", "plasma", "warm", "cool", "spectral"] as const;
+const COLOR_SCHEMES = [
+  "blue-red",
+  "viridis",
+  "plasma",
+  "warm",
+  "cool",
+  "spectral",
+  "inferno",
+  "magma",
+  "cividis",
+  "turbo",
+] as const;
 
 const EXPRESSION_SYNTAX =
   "Restricted JS over the query result columns (EXACT case-sensitive names, e.g. USP_TX_DEN). " +

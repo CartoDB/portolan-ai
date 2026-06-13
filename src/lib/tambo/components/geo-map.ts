@@ -23,7 +23,7 @@ export const geoMapComponent: TamboComponent = {
     "Otherwise, create a new GeoMap with the desired layers. " +
     "Props: layerType, latitude/longitude/zoom (view), pitch (0-85, camera tilt), bearing (-180 to 180, rotation), colorMetric (legend), colorScheme, extruded (3D), basemap ('auto' always, never override), layers (multi-layer). " +
     "CINEMATIC VIEWS: pitch=45-60 + bearing=-15 to -30 for dramatic 3D city perspectives. Combine with extruded=true for immersive building/population views. " +
-    "colorScheme: 'blue-red' | 'viridis' | 'plasma' | 'warm' | 'cool' | 'spectral' (see behavior rules for when to use each). " +
+    "colorScheme: sequential 'viridis' | 'plasma' | 'inferno' | 'magma' | 'cividis' | 'warm' | 'cool' for magnitude (low to high), diverging 'blue-red' | 'spectral' for above/below a midpoint, 'turbo' for high-contrast rainbow. Prefer viridis for general magnitude, cividis when colorblind-safe matters. " +
     "Use extruded=true for 3D when showing building height or population density, it reveals magnitude intuitively.",
   component: InteractableGeoMap,
   propsSchema: geoMapSchema,
