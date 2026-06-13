@@ -752,7 +752,7 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
     useMemo(() => {
       const boundsAcc = createBoundsAccumulator();
       const configs: LayerConfig[] = [];
-      const legends: { colorResolution: ColorResolution; count: number }[] = [];
+      const legends: { id: string; colorResolution: ColorResolution; count: number }[] = [];
       let totalCount = 0;
       let firstType: LayerType = explicitLayerType ?? "h3";
 
@@ -797,7 +797,11 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
             configs.push(result.layerConfig);
             if (configs.length === 1) firstType = result.type;
             if (result.layerConfig.colorResolution) {
-              legends.push({ colorResolution: result.layerConfig.colorResolution, count: result.featureCount });
+              legends.push({
+                id: layer.id,
+                colorResolution: result.layerConfig.colorResolution,
+                count: result.featureCount,
+              });
             }
           }
           totalCount += result.featureCount;
@@ -841,7 +845,11 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
             configs.push(result.layerConfig);
             firstType = result.type;
             if (result.layerConfig.colorResolution) {
-              legends.push({ colorResolution: result.layerConfig.colorResolution, count: result.featureCount });
+              legends.push({
+                id: result.layerConfig.id ?? "default",
+                colorResolution: result.layerConfig.colorResolution,
+                count: result.featureCount,
+              });
             }
           }
           totalCount = result.featureCount;
@@ -1184,10 +1192,10 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
 
       {/* Legend - renders from each layer's ColorResolution (gradient or swatches) */}
       <div className="px-3 py-1 border-t bg-muted/10 flex flex-col gap-1 flex-shrink-0">
-        {legendEntries.map((entry, i) => {
+        {legendEntries.map((entry) => {
           const res = entry.colorResolution;
           return (
-            <div key={visibleLayers[i]?.id ?? i} className="flex items-center gap-2 flex-wrap">
+            <div key={entry.id} className="flex items-center gap-2 flex-wrap">
               {res.legend.kind === "gradient" ? (
                 <>
                   <span className="text-xs text-muted-foreground font-mono">
