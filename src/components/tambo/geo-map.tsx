@@ -4,7 +4,7 @@ import * as React from "react";
 import { lazy, Suspense, useMemo } from "react";
 import { z } from "zod";
 import { readStorage, removeStorage, writeStorage } from "@/lib/storage";
-import { evaluateExpressionStats } from "@/services/geo/style-expressions";
+import { type ColorResolution, resolveColorEncoding } from "@/services/geo/color-encoding";
 import { applyTimeFilter, setCrossFilter, useQueryResult, useTimeFilter } from "@/services/query-store";
 import type { Basemap, ColorScheme, LayerConfig, LayerType } from "./geo-map-deckgl";
 import { useInDashboardPanel } from "./panel-context";
@@ -188,15 +188,6 @@ const DeckGLMap = lazy(() => import("./geo-map-deckgl"));
 
 const MAX_LAYERS = 5;
 
-function computePercentileRange(values: number[]): { min: number; max: number } {
-  if (values.length === 0) return { min: 0, max: 1 };
-  const sorted = [...values].sort((a, b) => a - b);
-  const lo = sorted[Math.floor(sorted.length * 0.05)];
-  const hi = sorted[Math.floor(sorted.length * 0.95)];
-  if (lo === hi) return { min: lo, max: lo + 1 };
-  return { min: lo, max: hi };
-}
-
 /**
  * Auto-detect layer type from query result column names.
  * Priority order (fastest → slowest rendering):
@@ -316,6 +307,7 @@ function transformQueryToLayer(
     destLatColumn: string;
     destLngColumn: string;
     colorScheme?: ColorScheme;
+    colorMetric?: string;
     opacity?: number;
     fillColorExpression?: string;
     elevationExpression?: string;
@@ -330,16 +322,15 @@ function transformQueryToLayer(
     return { layerConfig: null, type: opts.layerType ?? "h3", values: [], featureCount: 0 };
   }
 
-  // Fill expression legend/ramp domain: numeric expressions drive min/max,
-  // explicit-color expressions have no scalar domain (gradient legend hidden).
-  const exprStats = opts.fillColorExpression ? evaluateExpressionStats(rows, opts.fillColorExpression) : null;
-  const legendValues = (vals: number[]) => {
-    if (!exprStats) return vals;
-    if (exprStats.kind === "number") return exprStats.values;
-    if (exprStats.kind === "color") return [];
-    // invalid expression: degrade to the data's own valueColumn domain, not 0-1.
-    return vals;
-  };
+  // Single source of truth for fill color + legend (geo-map-deckgl reads scheme +
+  // domain from this, the legend reads its legend field). Computed once per layer.
+  const colorResolution = resolveColorEncoding(rows, {
+    colorScheme: opts.colorScheme ?? "blue-red",
+    valueColumn: opts.valueColumn,
+    fillColorExpression: opts.fillColorExpression,
+    colorMetric: opts.colorMetric,
+  });
+  const [domainMin, domainMax] = colorResolution.domain;
 
   // Priority 2: WKB binary → GeoArrow zero-copy rendering (no JSON parse, no JS objects)
   // Auto-detected GEOMETRY/WKB columns are extracted as Uint8Array[] by runQuery().
@@ -357,21 +348,20 @@ function transformQueryToLayer(
       const val = row[opts.valueColumn];
       if (val != null) vals.push(toNum(val));
     }
-    const effectiveVals = legendValues(vals);
-    const { min, max } = computePercentileRange(effectiveVals);
     return {
       layerConfig: {
         id: opts.id,
         type: "wkb" as LayerType,
         data: [], // WKB path uses wkbArrays, not JS data array
         wkbArrays: opts.wkbArrays,
-        colorScheme: opts.colorScheme,
+        colorScheme: colorResolution.scheme,
+        colorResolution,
         opacity: opts.opacity,
         fillColorExpression: opts.fillColorExpression,
         elevationExpression: opts.elevationExpression,
         radiusExpression: opts.radiusExpression,
-        minVal: min,
-        maxVal: max,
+        minVal: domainMin,
+        maxVal: domainMax,
         columnArrays: opts.columnArrays,
         arrowIPC: opts.arrowIPC,
         columnMapping: {
@@ -387,7 +377,7 @@ function transformQueryToLayer(
         },
       },
       type: "wkb",
-      values: effectiveVals,
+      values: vals,
       featureCount: opts.wkbArrays.length,
     };
   }
@@ -507,9 +497,6 @@ function transformQueryToLayer(
     }
   }
 
-  const effectiveVals = legendValues(vals);
-  const { min, max } = computePercentileRange(effectiveVals);
-
   return {
     layerConfig:
       data.length > 0
@@ -517,13 +504,14 @@ function transformQueryToLayer(
             id: opts.id,
             type,
             data,
-            colorScheme: opts.colorScheme,
+            colorScheme: colorResolution.scheme,
+            colorResolution,
             opacity: opts.opacity,
             fillColorExpression: opts.fillColorExpression,
             elevationExpression: opts.elevationExpression,
             radiusExpression: opts.radiusExpression,
-            minVal: min,
-            maxVal: max,
+            minVal: domainMin,
+            maxVal: domainMax,
             columnArrays: opts.columnArrays,
             arrowIPC: opts.arrowIPC,
             columnMapping: {
@@ -541,7 +529,7 @@ function transformQueryToLayer(
           }
         : null,
     type,
-    values: effectiveVals,
+    values: vals,
     featureCount: data.length,
   };
 }
@@ -760,167 +748,163 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
   const queryResults = useMemo(() => [qr0, qr1, qr2, qr3, qr4], [qr0, qr1, qr2, qr3, qr4]);
 
   // Transform data: multi-layer or single-layer
-  const {
-    layerConfigs,
-    legendEntries,
-    center,
-    bounds,
-    allValues,
-    globalMinVal,
-    globalMaxVal,
-    totalFeatureCount,
-    primaryType,
-  } = useMemo(() => {
-    const boundsAcc = createBoundsAccumulator();
-    const configs: LayerConfig[] = [];
-    const legends: { colorScheme: ColorScheme; colorMetric?: string; min: number; max: number; count: number }[] = [];
-    let allVals: number[] = [];
-    let totalCount = 0;
-    let firstType: LayerType = explicitLayerType ?? "h3";
+  const { layerConfigs, legendEntries, center, bounds, globalMinVal, globalMaxVal, totalFeatureCount, primaryType } =
+    useMemo(() => {
+      const boundsAcc = createBoundsAccumulator();
+      const configs: LayerConfig[] = [];
+      const legends: { id: string; colorResolution: ColorResolution; count: number }[] = [];
+      let totalCount = 0;
+      let firstType: LayerType = explicitLayerType ?? "h3";
 
-    if (isMultiLayer) {
-      for (let i = 0; i < visibleLayers.length; i++) {
-        const layer = visibleLayers[i];
-        const qr = queryResults[i];
-        if (!qr || (qr.rows.length === 0 && !qr.wkbArrays?.length)) continue;
+      if (isMultiLayer) {
+        for (let i = 0; i < visibleLayers.length; i++) {
+          const layer = visibleLayers[i];
+          const qr = queryResults[i];
+          if (!qr || (qr.rows.length === 0 && !qr.wkbArrays?.length)) continue;
 
-        // Apply time filter - narrows rows to the current timestamp step (H3/A5/scatter paths only)
-        const timeFilteredRows = qr.wkbArrays?.length ? qr.rows : applyTimeFilter(qr.rows, timeFilter, "GeoMap");
+          // Apply time filter - narrows rows to the current timestamp step (H3/A5/scatter paths only)
+          const timeFilteredRows = qr.wkbArrays?.length ? qr.rows : applyTimeFilter(qr.rows, timeFilter, "GeoMap");
 
-        const result = transformQueryToLayer(
-          timeFilteredRows,
-          {
-            id: layer.id,
-            layerType: layer.layerType as LayerType | undefined,
-            hexColumn: layer.hexColumn ?? "hex",
-            pentagonColumn: layer.pentagonColumn ?? "pentagon",
-            valueColumn: layer.valueColumn ?? "value",
-            latColumn: layer.latColumn ?? "lat",
-            lngColumn: layer.lngColumn ?? "lng",
-            geometryColumn: layer.geometryColumn ?? "geometry",
-            sourceLatColumn: layer.sourceLatColumn ?? "source_lat",
-            sourceLngColumn: layer.sourceLngColumn ?? "source_lng",
-            destLatColumn: layer.destLatColumn ?? "dest_lat",
-            destLngColumn: layer.destLngColumn ?? "dest_lng",
-            colorScheme: (layer.colorScheme as ColorScheme) ?? colorScheme,
-            opacity: layer.opacity,
-            fillColorExpression: layer.fillColorExpression,
-            elevationExpression: layer.elevationExpression,
-            radiusExpression: layer.radiusExpression,
-            columnArrays: qr.columnArrays,
-            arrowIPC: qr.arrowIPC,
-            wkbArrays: qr.wkbArrays,
-          },
-          boundsAcc,
-        );
+          const result = transformQueryToLayer(
+            timeFilteredRows,
+            {
+              id: layer.id,
+              layerType: layer.layerType as LayerType | undefined,
+              hexColumn: layer.hexColumn ?? "hex",
+              pentagonColumn: layer.pentagonColumn ?? "pentagon",
+              valueColumn: layer.valueColumn ?? "value",
+              latColumn: layer.latColumn ?? "lat",
+              lngColumn: layer.lngColumn ?? "lng",
+              geometryColumn: layer.geometryColumn ?? "geometry",
+              sourceLatColumn: layer.sourceLatColumn ?? "source_lat",
+              sourceLngColumn: layer.sourceLngColumn ?? "source_lng",
+              destLatColumn: layer.destLatColumn ?? "dest_lat",
+              destLngColumn: layer.destLngColumn ?? "dest_lng",
+              colorScheme: (layer.colorScheme as ColorScheme) ?? colorScheme,
+              colorMetric: layer.colorMetric,
+              opacity: layer.opacity,
+              fillColorExpression: layer.fillColorExpression,
+              elevationExpression: layer.elevationExpression,
+              radiusExpression: layer.radiusExpression,
+              columnArrays: qr.columnArrays,
+              arrowIPC: qr.arrowIPC,
+              wkbArrays: qr.wkbArrays,
+            },
+            boundsAcc,
+          );
 
-        if (result.layerConfig) {
-          configs.push(result.layerConfig);
-          if (configs.length === 1) firstType = result.type;
-          const { min, max } = computePercentileRange(result.values);
-          legends.push({
-            colorScheme: (layer.colorScheme as ColorScheme) ?? colorScheme,
-            colorMetric: layer.colorMetric,
-            min,
-            max,
-            count: result.featureCount,
-          });
+          if (result.layerConfig) {
+            configs.push(result.layerConfig);
+            if (configs.length === 1) firstType = result.type;
+            if (result.layerConfig.colorResolution) {
+              legends.push({
+                id: layer.id,
+                colorResolution: result.layerConfig.colorResolution,
+                count: result.featureCount,
+              });
+            }
+          }
+          totalCount += result.featureCount;
         }
-        allVals = allVals.concat(result.values);
-        totalCount += result.featureCount;
-      }
-    } else {
-      // Single-layer mode (backward compat)
-      const qr = qr0;
-      if (queryId && qr && qr.rows.length > 0 && singleLayerVisible) {
-        // Apply time filter - narrows rows to the current timestamp step
-        const timeFilteredRows = qr.wkbArrays?.length ? qr.rows : applyTimeFilter(qr.rows, timeFilter, "GeoMap");
+      } else {
+        // Single-layer mode (backward compat)
+        const qr = qr0;
+        if (queryId && qr && qr.rows.length > 0 && singleLayerVisible) {
+          // Apply time filter - narrows rows to the current timestamp step
+          const timeFilteredRows = qr.wkbArrays?.length ? qr.rows : applyTimeFilter(qr.rows, timeFilter, "GeoMap");
 
-        const result = transformQueryToLayer(
-          timeFilteredRows,
-          {
-            id: "default",
-            layerType: explicitLayerType,
-            hexColumn,
-            pentagonColumn,
-            valueColumn,
-            latColumn,
-            lngColumn,
-            radiusColumn,
-            geometryColumn,
-            sourceLatColumn,
-            sourceLngColumn,
-            destLatColumn,
-            destLngColumn,
-            columnArrays: qr.columnArrays,
-            arrowIPC: qr.arrowIPC,
-            wkbArrays: qr.wkbArrays,
-            opacity: singleLayerOpacity,
-            fillColorExpression,
-            elevationExpression,
-            radiusExpression,
-          },
-          boundsAcc,
-        );
-        if (result.layerConfig) {
-          configs.push(result.layerConfig);
-          firstType = result.type;
+          const result = transformQueryToLayer(
+            timeFilteredRows,
+            {
+              id: "default",
+              layerType: explicitLayerType,
+              hexColumn,
+              pentagonColumn,
+              valueColumn,
+              latColumn,
+              lngColumn,
+              radiusColumn,
+              geometryColumn,
+              sourceLatColumn,
+              sourceLngColumn,
+              destLatColumn,
+              destLngColumn,
+              colorScheme,
+              colorMetric: colorMetric ?? undefined,
+              columnArrays: qr.columnArrays,
+              arrowIPC: qr.arrowIPC,
+              wkbArrays: qr.wkbArrays,
+              opacity: singleLayerOpacity,
+              fillColorExpression,
+              elevationExpression,
+              radiusExpression,
+            },
+            boundsAcc,
+          );
+          if (result.layerConfig) {
+            configs.push(result.layerConfig);
+            firstType = result.type;
+            if (result.layerConfig.colorResolution) {
+              legends.push({
+                id: result.layerConfig.id ?? "default",
+                colorResolution: result.layerConfig.colorResolution,
+                count: result.featureCount,
+              });
+            }
+          }
+          totalCount = result.featureCount;
         }
-        allVals = result.values;
-        totalCount = result.featureCount;
       }
-    }
 
-    const { center: c, bounds: b } = finalizeBounds(boundsAcc);
+      const { center: c, bounds: b } = finalizeBounds(boundsAcc);
 
-    // Derive global min/max from per-layer configs (already computed by transformQueryToLayer)
-    // instead of re-sorting allValues with computePercentileRange
-    let globalMin = Number.POSITIVE_INFINITY;
-    let globalMax = Number.NEGATIVE_INFINITY;
-    for (const cfg of configs) {
-      if (cfg.minVal != null && cfg.minVal < globalMin) globalMin = cfg.minVal;
-      if (cfg.maxVal != null && cfg.maxVal > globalMax) globalMax = cfg.maxVal;
-    }
-    if (!Number.isFinite(globalMin)) globalMin = 0;
-    if (!Number.isFinite(globalMax)) globalMax = 1;
+      // Derive global min/max from per-layer configs (already computed by transformQueryToLayer)
+      let globalMin = Number.POSITIVE_INFINITY;
+      let globalMax = Number.NEGATIVE_INFINITY;
+      for (const cfg of configs) {
+        if (cfg.minVal != null && cfg.minVal < globalMin) globalMin = cfg.minVal;
+        if (cfg.maxVal != null && cfg.maxVal > globalMax) globalMax = cfg.maxVal;
+      }
+      if (!Number.isFinite(globalMin)) globalMin = 0;
+      if (!Number.isFinite(globalMax)) globalMax = 1;
 
-    return {
-      layerConfigs: configs,
-      legendEntries: legends,
-      center: c,
-      bounds: b,
-      allValues: allVals,
-      globalMinVal: globalMin,
-      globalMaxVal: globalMax,
-      totalFeatureCount: totalCount,
-      primaryType: firstType,
-    };
-  }, [
-    isMultiLayer,
-    visibleLayers,
-    queryId,
-    queryResults,
-    explicitLayerType,
-    hexColumn,
-    pentagonColumn,
-    valueColumn,
-    latColumn,
-    lngColumn,
-    radiusColumn,
-    geometryColumn,
-    sourceLatColumn,
-    sourceLngColumn,
-    destLatColumn,
-    destLngColumn,
-    colorScheme,
-    fillColorExpression,
-    elevationExpression,
-    radiusExpression,
-    timeFilter,
-    singleLayerVisible,
-    singleLayerOpacity,
-    qr0,
-  ]);
+      return {
+        layerConfigs: configs,
+        legendEntries: legends,
+        center: c,
+        bounds: b,
+        globalMinVal: globalMin,
+        globalMaxVal: globalMax,
+        totalFeatureCount: totalCount,
+        primaryType: firstType,
+      };
+    }, [
+      isMultiLayer,
+      visibleLayers,
+      queryId,
+      queryResults,
+      explicitLayerType,
+      hexColumn,
+      pentagonColumn,
+      valueColumn,
+      latColumn,
+      lngColumn,
+      radiusColumn,
+      geometryColumn,
+      sourceLatColumn,
+      sourceLngColumn,
+      destLatColumn,
+      destLngColumn,
+      colorScheme,
+      fillColorExpression,
+      elevationExpression,
+      radiusExpression,
+      timeFilter,
+      singleLayerVisible,
+      singleLayerOpacity,
+      qr0,
+      colorMetric,
+    ]);
 
   // Precompute H3 centroids once when data loads - used for both bounds and bbox cross-filter
   const hasH3Layer = layerConfigs.some((c) => c.type === "h3");
@@ -1206,52 +1190,48 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
         )}
       </div>
 
-      {/* Legend */}
+      {/* Legend - renders from each layer's ColorResolution (gradient or swatches) */}
       <div className="px-3 py-1 border-t bg-muted/10 flex flex-col gap-1 flex-shrink-0">
-        {isMultiLayer && legendEntries.length > 0 ? (
-          /* Multi-layer: stacked legend entries */
-          legendEntries.map((entry, i) => (
-            <div key={visibleLayers[i]?.id ?? i} className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-mono">
-                {entry.min.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-              </span>
-              <div
-                className="flex-1 h-2 rounded-full max-w-[200px]"
-                style={{ background: LEGEND_GRADIENTS[entry.colorScheme] }}
-              />
-              <span className="text-xs text-muted-foreground font-mono">
-                {entry.max.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-              </span>
-              {entry.colorMetric && (
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{entry.colorMetric}</span>
+        {legendEntries.map((entry) => {
+          const res = entry.colorResolution;
+          return (
+            <div key={entry.id} className="flex items-center gap-2 flex-wrap">
+              {res.legend.kind === "gradient" ? (
+                <>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {res.domain[0].toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </span>
+                  <div
+                    className="flex-1 h-2 rounded-full max-w-[200px]"
+                    style={{ background: LEGEND_GRADIENTS[res.scheme] }}
+                  />
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {res.domain[1].toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </span>
+                </>
+              ) : (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {res.legend.items.map((it) => (
+                    <span key={it.color.join(",")} className="flex items-center gap-1">
+                      <span
+                        className="inline-block w-3 h-3 rounded-sm border border-border/40"
+                        style={{
+                          backgroundColor: `rgba(${it.color[0]},${it.color[1]},${it.color[2]},${it.color[3] / 255})`,
+                        }}
+                      />
+                      <span className="text-[10px] text-muted-foreground font-mono">{it.count.toLocaleString()}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {res.label && (
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{res.label}</span>
               )}
               <span className="text-xs text-muted-foreground ml-auto">{entry.count.toLocaleString()}</span>
             </div>
-          ))
-        ) : (
-          /* Single-layer legend */
-          <div className="flex items-center gap-2">
-            {allValues.length > 0 && (
-              <>
-                <span className="text-xs text-muted-foreground font-mono">
-                  {minVal.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                </span>
-                <div
-                  className="flex-1 h-2 rounded-full max-w-[200px]"
-                  style={{ background: LEGEND_GRADIENTS[colorScheme] }}
-                />
-                <span className="text-xs text-muted-foreground font-mono">
-                  {maxVal.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                </span>
-              </>
-            )}
-            {colorMetric && (
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{colorMetric}</span>
-            )}
-            {hasData && <span className="text-xs text-muted-foreground ml-auto">{countLabel}</span>}
-          </div>
-        )}
-        {isMultiLayer && hasData && (
+          );
+        })}
+        {legendEntries.length === 0 && hasData && (
           <div className="flex justify-end">
             <span className="text-xs text-muted-foreground">{countLabel}</span>
           </div>

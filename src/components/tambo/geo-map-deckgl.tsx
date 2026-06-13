@@ -14,6 +14,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import React, { useEffect, useMemo, useRef } from "react";
 import { useCopyToClipboard } from "@/lib/use-copy-to-clipboard";
+import type { ColorResolution } from "@/services/geo/color-encoding";
 import {
   compileExpression,
   makeArrowRowReader,
@@ -26,7 +27,7 @@ import { consumeFlyTo, useFlyToVersion } from "@/services/query-store";
 
 /* ── Types ──────────────────────────────────────────────────────── */
 
-export type ColorScheme = "blue-red" | "viridis" | "plasma" | "warm" | "cool" | "spectral";
+export type { ColorScheme } from "@/services/geo/color-encoding";
 
 export type LayerType = "h3" | "a5" | "scatterplot" | "geojson" | "arc" | "wkb";
 
@@ -38,6 +39,8 @@ export interface LayerConfig {
   opacity?: number;
   minVal?: number;
   maxVal?: number;
+  /** Single source of truth for fill color + legend, from resolveColorEncoding(). */
+  colorResolution?: ColorResolution;
   /** Raw column typed arrays from Arrow for zero-copy GeoArrow rendering */
   columnArrays?: Record<string, ArrayLike<any>>;
   /** Arrow IPC bytes for true zero-copy deserialization */
@@ -485,9 +488,12 @@ function buildLayers(
   for (let i = 0; i < configs.length; i++) {
     const config = configs[i];
     const layerId = config.id ?? `${config.type}-${i}`;
-    const scheme = config.colorScheme ?? colorScheme;
-    const lo = config.minVal ?? minVal;
-    const hi = config.maxVal ?? maxVal;
+    // Single source of truth: when a resolution is present, fill scheme + domain
+    // come from it (the same object the legend reads), so the two cannot drift.
+    const res = config.colorResolution;
+    const scheme = res?.scheme ?? config.colorScheme ?? colorScheme;
+    const lo = res ? res.domain[0] : (config.minVal ?? minVal);
+    const hi = res ? res.domain[1] : (config.maxVal ?? maxVal);
     const layerOpacity = config.opacity ?? 0.85;
     const useGeoArrow = canUseGeoArrow(config);
     const ramp = (v: number): RGBA => valueToColor(v, lo, hi, scheme);
