@@ -19,7 +19,7 @@ let initPromise: Promise<any> | null = null;
 let _initAttempts = 0;
 const MAX_INIT_RETRIES = 3;
 
-/** Cap on how many queryId tables we keep materialized in WASM memory. Matches the store's specific-id cap. */
+/** Cap on how many queryId tables we keep materialized in WASM memory (matches the store's specific-id cap of 40; the auto-id store cap is 20). */
 const REGISTERED_TABLE_CAP = 40;
 let registeredOrder: string[] = [];
 
@@ -634,7 +634,8 @@ export async function runQuery(input: { sql: string; nativeCrs?: string } | stri
               sampleRows: publicRows.slice(0, 3),
               geometryNote:
                 `Geometry column "${geomCols[0]}" was converted to WKB for rendering. ` +
-                `Use SELECT * for follow-up queries - lat/lng are synthetic.`,
+                `Use SELECT * for follow-up queries - lat/lng are synthetic. ` +
+                `This result is NOT registered as a reusable table, so do not query FROM ${queryId}, re-query the original file instead.`,
             };
           }
         }
