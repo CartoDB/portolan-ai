@@ -14,7 +14,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import React, { useEffect, useMemo, useRef } from "react";
 import { useCopyToClipboard } from "@/lib/use-copy-to-clipboard";
-import type { ColorResolution } from "@/services/geo/color-encoding";
+import { type ColorResolution, SCHEMES } from "@/services/geo/color-encoding";
 import {
   compileExpression,
   makeArrowRowReader,
@@ -102,53 +102,8 @@ export interface DeckGLMapProps {
 }
 
 /* ── Color ramps ────────────────────────────────────────────────── */
-
-const SCHEMES: Record<string, [number, number, number][]> = {
-  "blue-red": [
-    [5, 113, 176],
-    [84, 174, 173],
-    [166, 217, 106],
-    [254, 224, 139],
-    [252, 141, 89],
-    [215, 48, 39],
-  ],
-  viridis: [
-    [68, 1, 84],
-    [59, 82, 139],
-    [33, 145, 140],
-    [94, 201, 98],
-    [253, 231, 37],
-  ],
-  plasma: [
-    [13, 8, 135],
-    [126, 3, 168],
-    [204, 71, 120],
-    [248, 149, 64],
-    [240, 249, 33],
-  ],
-  warm: [
-    [254, 224, 139],
-    [253, 174, 97],
-    [244, 109, 67],
-    [215, 48, 39],
-    [165, 0, 38],
-  ],
-  cool: [
-    [247, 252, 253],
-    [204, 236, 230],
-    [102, 194, 164],
-    [35, 139, 69],
-    [0, 68, 27],
-  ],
-  spectral: [
-    [94, 79, 162],
-    [50, 136, 189],
-    [102, 194, 165],
-    [254, 224, 139],
-    [244, 109, 67],
-    [158, 1, 66],
-  ],
-};
+/* SCHEMES (the canonical scheme→stops table) lives in services/geo/color-encoding
+   so the legend builds its gradient from the exact same stops this ramp uses. */
 
 export function valueToColor(
   v: number,

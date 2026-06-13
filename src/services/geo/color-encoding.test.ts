@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePercentileRange, resolveColorEncoding } from "./color-encoding";
+import { computePercentileRange, resolveColorEncoding, SCHEMES, schemeToCssGradient } from "./color-encoding";
 
 describe("computePercentileRange", () => {
   it("returns 0..1 for empty input", () => {
@@ -53,5 +53,27 @@ describe("resolveColorEncoding", () => {
     const r = resolveColorEncoding([], { colorScheme: "warm", valueColumn: "pop" });
     expect(r.legend.kind).toBe("gradient");
     expect(r.domain).toEqual([0, 1]);
+  });
+});
+
+describe("schemeToCssGradient", () => {
+  it("builds the legend gradient from the SAME stops the fill (SCHEMES) uses, for every scheme", () => {
+    for (const scheme of Object.keys(SCHEMES) as (keyof typeof SCHEMES)[]) {
+      const css = schemeToCssGradient(scheme);
+      expect(css.startsWith("linear-gradient(90deg,")).toBe(true);
+      // Every fill stop must appear in the legend gradient, so map and legend can never drift.
+      for (const [r, g, b] of SCHEMES[scheme]) {
+        expect(css).toContain(`rgb(${r}, ${g}, ${b})`);
+      }
+    }
+  });
+
+  it("viridis legend matches the true viridis fill stops (regression: legend used a divergent hardcoded table)", () => {
+    const css = schemeToCssGradient("viridis");
+    // These are the real viridis mid-stops the fill paints. The old hardcoded
+    // LEGEND_GRADIENTS used #31688e / #35b779 instead, so the bar disagreed with the map.
+    expect(css).toContain("rgb(59, 82, 139)");
+    expect(css).toContain("rgb(33, 145, 140)");
+    expect(css).toContain("rgb(94, 201, 98)");
   });
 });

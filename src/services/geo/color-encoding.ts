@@ -10,6 +10,66 @@ import { compileExpression, type RGBA, safeEvalExpression } from "./style-expres
 
 export type ColorScheme = "blue-red" | "viridis" | "plasma" | "warm" | "cool" | "spectral";
 
+/**
+ * Canonical color stops per scheme. THE one table that turns a scheme name into
+ * pixels. deck.gl ramps the fill through these (valueToColor) and the legend builds
+ * its gradient bar from these (schemeToCssGradient), so the painted map and the
+ * legend can never show different colors for the same scheme.
+ */
+export const SCHEMES: Record<ColorScheme, [number, number, number][]> = {
+  "blue-red": [
+    [5, 113, 176],
+    [84, 174, 173],
+    [166, 217, 106],
+    [254, 224, 139],
+    [252, 141, 89],
+    [215, 48, 39],
+  ],
+  viridis: [
+    [68, 1, 84],
+    [59, 82, 139],
+    [33, 145, 140],
+    [94, 201, 98],
+    [253, 231, 37],
+  ],
+  plasma: [
+    [13, 8, 135],
+    [126, 3, 168],
+    [204, 71, 120],
+    [248, 149, 64],
+    [240, 249, 33],
+  ],
+  warm: [
+    [254, 224, 139],
+    [253, 174, 97],
+    [244, 109, 67],
+    [215, 48, 39],
+    [165, 0, 38],
+  ],
+  cool: [
+    [247, 252, 253],
+    [204, 236, 230],
+    [102, 194, 164],
+    [35, 139, 69],
+    [0, 68, 27],
+  ],
+  spectral: [
+    [94, 79, 162],
+    [50, 136, 189],
+    [102, 194, 165],
+    [254, 224, 139],
+    [244, 109, 67],
+    [158, 1, 66],
+  ],
+};
+
+/** Build the legend's CSS gradient from the SAME stops the fill ramps through. */
+export function schemeToCssGradient(scheme: ColorScheme): string {
+  const stops = SCHEMES[scheme] ?? SCHEMES["blue-red"];
+  const parts = stops.map((c) => `rgb(${c[0]}, ${c[1]}, ${c[2]})`);
+  return `linear-gradient(90deg, ${parts.join(", ")})`;
+}
+
 /** 5th/95th percentile range, clamping outliers. Flat arrays spread by 1. */
 export function computePercentileRange(values: number[]): { min: number; max: number } {
   if (values.length === 0) return { min: 0, max: 1 };

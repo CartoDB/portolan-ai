@@ -4,7 +4,7 @@ import * as React from "react";
 import { lazy, Suspense, useMemo } from "react";
 import { z } from "zod";
 import { readStorage, removeStorage, writeStorage } from "@/lib/storage";
-import { type ColorResolution, resolveColorEncoding } from "@/services/geo/color-encoding";
+import { type ColorResolution, resolveColorEncoding, schemeToCssGradient } from "@/services/geo/color-encoding";
 import { applyTimeFilter, setCrossFilter, useQueryResult, useTimeFilter } from "@/services/query-store";
 import type { Basemap, ColorScheme, LayerConfig, LayerType } from "./geo-map-deckgl";
 import { useInDashboardPanel } from "./panel-context";
@@ -233,15 +233,6 @@ function resolveColumn(row: Record<string, unknown>, ...candidates: string[]): u
   }
   return undefined;
 }
-
-const LEGEND_GRADIENTS: Record<string, string> = {
-  "blue-red": "linear-gradient(90deg, #0571b0, #54aead, #a6d96a, #fee08b, #fc8d59, #d73027)",
-  viridis: "linear-gradient(90deg, #440154, #31688e, #35b779, #fde725)",
-  plasma: "linear-gradient(90deg, #0d0887, #7e03a8, #cc4778, #f89540, #f0f921)",
-  warm: "linear-gradient(90deg, #fee08b, #fdae61, #f46d43, #d73027, #a50026)",
-  cool: "linear-gradient(90deg, #f7fcfd, #ccece6, #66c2a4, #238b45, #00441b)",
-  spectral: "linear-gradient(90deg, #5e4fa2, #3288bd, #66c2a5, #fee08b, #f46d43, #9e0142)",
-};
 
 /* ── Bounds accumulator ──────────────────────────────────────────── */
 
@@ -1203,7 +1194,7 @@ export const GeoMap = React.forwardRef<HTMLDivElement, GeoMapProps>((props, ref)
                   </span>
                   <div
                     className="flex-1 h-2 rounded-full max-w-[200px]"
-                    style={{ background: LEGEND_GRADIENTS[res.scheme] }}
+                    style={{ background: schemeToCssGradient(res.scheme) }}
                   />
                   <span className="text-xs text-muted-foreground font-mono">
                     {res.domain[1].toLocaleString(undefined, { maximumFractionDigits: 1 })}
