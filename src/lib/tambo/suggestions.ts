@@ -43,8 +43,9 @@ const CATALOG_QUESTIONS: Record<string, CatalogQuestion[]> = {
     },
     {
       id: "3",
-      title: "Tourist flats",
-      prompt: "Where are the registered tourist flats in Madrid, and how many are there by area?",
+      title: "Tourist flats & unemployment",
+      prompt:
+        "Where are Madrid's registered tourist flats, and how do they compare with unemployment by district and neighbourhood?",
     },
     {
       id: "5",
@@ -59,12 +60,14 @@ const CATALOG_QUESTIONS: Record<string, CatalogQuestion[]> = {
     {
       id: "6",
       title: "Acoustic protection",
-      prompt: "Which parts of Madrid fall inside a Special Acoustic Protection Zone (ZPAE)?",
+      prompt:
+        "Which parts of Madrid fall inside a Special Acoustic Protection Zone (ZPAE), and which care homes and health centres sit inside them?",
     },
     {
       id: "9",
-      title: "Protected buildings",
-      prompt: "Which buildings in Madrid are legally protected before a licence can be granted?",
+      title: "Protected heritage & land",
+      prompt:
+        "Which buildings, green spaces and historic droving routes in Madrid are legally protected before a licence can be granted?",
     },
     {
       id: "2",
@@ -73,8 +76,8 @@ const CATALOG_QUESTIONS: Record<string, CatalogQuestion[]> = {
     },
     {
       id: "10",
-      title: "Air quality near schools",
-      prompt: "Where are the air-monitoring schools in Madrid relative to the low-emission zone?",
+      title: "Air quality & tree canopy",
+      prompt: "How do Madrid's tree canopy and parks relate to air quality near schools and the low-emission zone?",
     },
   ],
   finland: [

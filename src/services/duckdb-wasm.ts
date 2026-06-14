@@ -110,6 +110,14 @@ async function initDuckDB(): Promise<any> {
             // Our detectGeometryColumns + wrapSqlForGeometry handles geometry extraction instead.
             // Must be GLOBAL so it persists across connections (runQuery opens new connections).
             "SET GLOBAL enable_geoparquet_conversion = false",
+            // Drop insertion-order tracking on large joins/aggregations. The WASM build is
+            // 32-bit (~3 GB usable heap, no disk spill), so peak-memory headroom is the binding
+            // constraint on heavy spatial joins. We never rely on implicit ordering (queries that
+            // care use an explicit ORDER BY), so this is a free memory win. GLOBAL to persist
+            // across the connections runQuery opens. We do NOT raise memory_limit: it cannot
+            // exceed the wasm32 4 GB address space, and setting it higher turns a catchable
+            // Out of Memory into a hard module crash.
+            "SET GLOBAL preserve_insertion_order = false",
           ]) {
             try {
               await conn.query(stmt);
